@@ -21,8 +21,9 @@ class TestSearXNGConnector:
         assert connector.is_configured() is True
 
     @pytest.mark.unit
-    def test_is_not_configured_without_host(self):
+    def test_is_not_configured_without_host(self, monkeypatch):
         """Connector is not configured when host is empty."""
+        monkeypatch.setattr("src.config.settings.searxng_host", "")
         connector = SearXNGConnector(host="")
         assert connector.is_configured() is False
 
@@ -84,8 +85,9 @@ class TestTavilyConnector:
         assert connector.is_configured() is True
 
     @pytest.mark.unit
-    def test_is_not_configured_without_key(self):
+    def test_is_not_configured_without_key(self, monkeypatch):
         """Connector is not configured when API key is empty."""
+        monkeypatch.setattr("src.config.settings.tavily_api_key", "")
         connector = TavilyConnector(api_key="")
         assert connector.is_configured() is False
 
@@ -135,8 +137,9 @@ class TestLinkUpConnector:
         assert connector.is_configured() is True
 
     @pytest.mark.unit
-    def test_is_not_configured_without_key(self):
+    def test_is_not_configured_without_key(self, monkeypatch):
         """Connector is not configured when API key is empty."""
+        monkeypatch.setattr("src.config.settings.linkup_api_key", "")
         connector = LinkUpConnector(api_key="")
         assert connector.is_configured() is False
 

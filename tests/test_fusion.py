@@ -77,29 +77,46 @@ class TestRRFFusion:
     @pytest.mark.unit
     def test_k_parameter_effect(self):
         """Lower k gives more weight to top ranks."""
-        list1 = [
+        # A appears at rank 1 in list1, rank 3 in list2
+        # B appears at rank 1 in list2 only
+        # C appears at rank 2 in list2 only
+
+        # Create fresh sources for low-k test (rrf_fusion modifies scores in-place)
+        list1_low = [
             Source(id="a", title="A", url="http://a.com", content="A"),
         ]
-        list2 = [
+        list2_low = [
             Source(id="b", title="B", url="http://b.com", content="B"),
-            Source(id="a2", title="A", url="http://a.com", content="A"),  # A at rank 2
+            Source(id="c", title="C", url="http://c.com", content="C"),
+            Source(id="a2", title="A", url="http://a.com", content="A"),  # A at rank 3
+        ]
+
+        # Create fresh sources for high-k test
+        list1_high = [
+            Source(id="a", title="A", url="http://a.com", content="A"),
+        ]
+        list2_high = [
+            Source(id="b", title="B", url="http://b.com", content="B"),
+            Source(id="c", title="C", url="http://c.com", content="C"),
+            Source(id="a2", title="A", url="http://a.com", content="A"),  # A at rank 3
         ]
 
         # With low k, rank difference matters more
-        result_low_k = rrf_fusion([list1, list2], k=1)
+        result_low_k = rrf_fusion([list1_low, list2_low], k=1)
         # With high k, rank difference matters less
-        result_high_k = rrf_fusion([list1, list2], k=100)
+        result_high_k = rrf_fusion([list1_high, list2_high], k=100)
 
-        # A should have higher relative score with higher k
-        # (because rank penalty is smaller)
+        # Get scores for A (appears in both lists)
         a_score_low = next(s.score for s in result_low_k if s.url == "http://a.com")
         b_score_low = next(s.score for s in result_low_k if s.url == "http://b.com")
         a_score_high = next(s.score for s in result_high_k if s.url == "http://a.com")
         b_score_high = next(s.score for s in result_high_k if s.url == "http://b.com")
 
-        # Ratio should be closer to 1 with higher k
+        # A's advantage from appearing in 2 lists should be relatively larger with high k
+        # because the rank penalty is smaller proportionally
         ratio_low = a_score_low / b_score_low
         ratio_high = a_score_high / b_score_high
+        # With high k, A's multi-list advantage becomes more pronounced
         assert ratio_high > ratio_low
 
     @pytest.mark.unit

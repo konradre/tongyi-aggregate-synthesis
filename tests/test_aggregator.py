@@ -19,8 +19,9 @@ class TestSearchAggregator:
         assert aggregator.connectors[0].name == "searxng"
 
     @pytest.mark.unit
-    def test_init_filters_unconfigured(self):
+    def test_init_filters_unconfigured(self, monkeypatch):
         """Aggregator filters out unconfigured connectors."""
+        monkeypatch.setattr("src.config.settings.tavily_api_key", "")
         configured = SearXNGConnector(host="http://localhost:8888")
         unconfigured = TavilyConnector(api_key="")
 
