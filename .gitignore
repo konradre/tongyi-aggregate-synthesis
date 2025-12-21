@@ -11,6 +11,10 @@ build
 .venv
 venv
 
+# Research documentation (local only)
+BLEEDING_EDGE_RESEARCH_FINDINGS.md
+ENHANCEMENT_ROADMAP.md
+
 # Test artifacts
 tests/.env
 tests/outputs/

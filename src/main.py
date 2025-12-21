@@ -50,10 +50,15 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "endpoints": {
+            # Core endpoints
             "health": "/api/v1/health",
             "search": "/api/v1/search",
             "research": "/api/v1/research",
-            "ask": "/api/v1/ask",
+            # Perplexity-equivalent endpoints
+            "ask": "/api/v1/ask",           # mirrors perplexity_ask
+            "discover": "/api/v1/discover", # mirrors perplexity_search (EXPLORATORY)
+            "synthesize": "/api/v1/synthesize",  # mirrors perplexity_research (SYNTHESIS)
+            "reason": "/api/v1/reason",     # mirrors perplexity_reason
         },
     }
 
