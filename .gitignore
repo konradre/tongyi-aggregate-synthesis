@@ -24,3 +24,4 @@ tests/fixtures/secrets/
 coverage.xml
 htmlcov/
 .coverage
+P1_ENHANCEMENTS.md
