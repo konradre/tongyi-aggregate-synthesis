@@ -13,6 +13,7 @@ Key insight: Planning before synthesis improves structure and coverage.
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ..llm_utils import get_llm_content
 from .aggregator import PreGatheredSource, SynthesisStyle
 
 
@@ -317,7 +318,7 @@ Provide the improved synthesis with proper [N] citations:"""
             max_tokens=max_tokens,
             temperature=0.7,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)
 
 
 # Heuristic fallback for outline generation

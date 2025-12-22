@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Literal, Optional
 
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 
 AspectType = Literal["factual", "procedural", "comparative", "evaluative"]
@@ -256,4 +257,4 @@ QUERY: FastAPI production configuration settings
             max_tokens=1000,
             temperature=0.3,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)

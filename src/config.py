@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     linkup_depth: str = Field(default="standard", description="Search depth: standard or deep")
 
     # Tongyi/LLM Configuration (OpenAI-compatible API)
-    llm_api_base: str = Field(default="http://172.17.0.1:8080/v1", description="LLM API base URL")
+    llm_api_base: str = Field(default="http://192.168.1.120:8080/v1", description="LLM API base URL")
     llm_api_key: str = Field(default="not-needed", description="LLM API key (not needed for local)")
     llm_model: str = Field(default="tongyi-deepresearch-30b", description="Model name")
     llm_temperature: float = Field(default=0.85, description="Generation temperature")

@@ -4,6 +4,7 @@ import re
 from openai import AsyncOpenAI
 from ..connectors.base import Source
 from ..config import settings
+from ..llm_utils import get_llm_content
 from .prompts import RESEARCH_SYSTEM_PROMPT, build_research_prompt, format_citations
 
 
@@ -81,7 +82,7 @@ class SynthesisEngine:
                 max_tokens=self.max_tokens,
             )
 
-            content = response.choices[0].message.content or ""
+            content = get_llm_content(response.choices[0].message)
 
             # Extract cited source IDs from response
             cited_ids = set(re.findall(r'\[([a-z]{2}_[a-f0-9]+)\]', content))

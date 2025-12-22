@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 
 @dataclass
@@ -210,4 +211,4 @@ Generate exactly 4 variants. Keep each under 10 words."""
             max_tokens=500,
             temperature=0.7,  # Higher temp for diversity
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)

@@ -17,6 +17,13 @@ ENHANCEMENT_ROADMAP.md
 DESIGN_PHILOSOPHY.md
 P0_ENHANCEMENTS.md
 
+# Test reports (local only)
+TEST_OUTCOME_REPORT.md
+
+# Local reference docs
+REASONING_MODEL_COMPATIBILITY.md
+LLM_ENDPOINT_QUICKREF.md
+
 # Test artifacts
 tests/.env
 tests/outputs/

@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Optional
 
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 
 class QualityDecision(str, Enum):
@@ -304,7 +305,7 @@ Format: One query per line."""
             max_tokens=500,
             temperature=0.3,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)
 
     def evaluate_sync(
         self,

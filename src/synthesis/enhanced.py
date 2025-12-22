@@ -23,6 +23,7 @@ from typing import Optional
 
 from ..config import settings
 from ..connectors.base import Source
+from ..llm_utils import get_llm_content
 from ..ranking.passage import Passage
 
 
@@ -640,4 +641,4 @@ COVERAGE: [percentage of query addressed]"""
             temperature=0.7,
         )
 
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)

@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Optional
 
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 
 class QueryType(str, Enum):
@@ -241,7 +242,7 @@ Respond with just the category name."""
             max_tokens=50,
             temperature=0.1,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)
 
     def classify_sync(self, query: str) -> tuple[QueryType, float]:
         """

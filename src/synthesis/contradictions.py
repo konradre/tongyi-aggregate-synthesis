@@ -17,6 +17,7 @@ from enum import Enum
 from typing import Optional
 
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 
 class ContradictionSeverity(str, Enum):
@@ -333,4 +334,4 @@ Indicate which position has more support, if clear.""")
             max_tokens=2000,
             temperature=0.3,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)

@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Optional
 
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 
 class SynthesisStyle(str, Enum):
@@ -381,4 +382,4 @@ Content:
             max_tokens=max_tokens,
             temperature=0.7,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)

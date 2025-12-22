@@ -12,6 +12,7 @@ Key insight: Context-aware summarization > raw content.
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ..llm_utils import get_llm_content
 from .aggregator import PreGatheredSource
 
 
@@ -297,7 +298,7 @@ Ranking:"""
             max_tokens=max_tokens,
             temperature=0.3,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)
 
     def prepare_sync(
         self,

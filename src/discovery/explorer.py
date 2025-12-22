@@ -24,6 +24,7 @@ from typing import Optional, TYPE_CHECKING
 
 from ..connectors.base import Source
 from ..config import settings
+from ..llm_utils import get_llm_content
 
 if TYPE_CHECKING:
     from .routing import ConnectorRouter
@@ -545,4 +546,4 @@ Brief overview:"""
             max_tokens=max_tokens,
             temperature=0.7,
         )
-        return response.choices[0].message.content
+        return get_llm_content(response.choices[0].message)

@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from ..llm_utils import get_llm_content
+
 
 class FocusModeType(str, Enum):
     """Available focus modes."""
@@ -220,7 +222,7 @@ Respond with just the mode name (one word)."""
             temperature=0.1,
         )
 
-        mode_name = response.choices[0].message.content.strip().lower()
+        mode_name = get_llm_content(response.choices[0].message).strip().lower()
 
         try:
             return FocusModeType(mode_name)
