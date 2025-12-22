@@ -371,3 +371,161 @@ class SynthesizeResponseEnhanced(BaseModel):
     quality_gate: QualityGateSchema | None = None
     contradictions: list[ContradictionSchema] = Field(default_factory=list)
     verified_claims: list[VerifiedClaimSchema] = Field(default_factory=list)
+
+
+# =============================================================================
+# P1 Enhancement Schemas
+# =============================================================================
+
+
+class PresetInfoSchema(BaseModel):
+    """Summary info for a synthesis preset."""
+
+    name: str = Field(..., description="Preset display name")
+    value: str = Field(..., description="Preset value to use in requests")
+    description: str
+    style: str
+    max_tokens: int
+
+
+class PresetListResponse(BaseModel):
+    """Response listing available synthesis presets."""
+
+    presets: list[PresetInfoSchema]
+
+
+class FocusModeInfoSchema(BaseModel):
+    """Summary info for a focus mode."""
+
+    name: str
+    value: str
+    description: str
+    search_expansion: bool
+    gap_categories: list[str]
+
+
+class FocusModeListResponse(BaseModel):
+    """Response listing available focus modes."""
+
+    modes: list[FocusModeInfoSchema]
+
+
+class OutlineSectionSchema(BaseModel):
+    """A section in an outlined synthesis."""
+
+    title: str
+    content: str
+
+
+class CritiqueSchema(BaseModel):
+    """Critique of a synthesis draft."""
+
+    issues: list[str]
+    has_critical: bool
+
+
+class ContextualSummarySchema(BaseModel):
+    """A source summarized in context of the query."""
+
+    source_title: str
+    source_url: str
+    summary: str
+    relevance_score: float
+    key_points: list[str]
+
+
+class DiscoverRequestP1(BaseModel):
+    """P1 enhanced discover request with focus mode."""
+
+    query: str = Field(..., description="Research query")
+    top_k: int = Field(default=15, ge=1, le=50, description="Number of sources")
+    expand_searches: bool = Field(default=True, description="Expand to related concepts")
+    fill_gaps: bool = Field(default=True, description="Auto-search for knowledge gaps")
+    use_adaptive_routing: bool = Field(default=True, description="Route to optimal connectors")
+    connectors: list[str] | None = Field(default=None)
+    # P1: Focus Mode
+    focus_mode: Literal[
+        "general", "academic", "documentation", "comparison", "debugging", "tutorial", "news"
+    ] | None = Field(
+        default=None,
+        description="Domain-specific mode (auto-detected if not provided)"
+    )
+
+
+class SynthesizeRequestP1(BaseModel):
+    """P1 enhanced synthesis request with presets and outline."""
+
+    query: str = Field(..., description="Original research query")
+    sources: list[PreGatheredSourceSchema] = Field(
+        ...,
+        description="Pre-gathered sources from Ref/Exa/Jina"
+    )
+    # P1: Preset-driven configuration
+    preset: Literal[
+        "comprehensive", "fast", "contracrow", "academic", "tutorial"
+    ] | None = Field(
+        default=None,
+        description="Use preset configuration (overrides individual options)"
+    )
+    # Individual options (used when preset is None)
+    style: Literal[
+        "comprehensive", "concise", "comparative", "tutorial", "academic"
+    ] = Field(default="comprehensive")
+    max_tokens: int = Field(default=3000, ge=500, le=8000)
+    # P1: Outline-guided synthesis
+    use_outline: bool = Field(
+        default=False,
+        description="Use SciRAG outline-guided synthesis"
+    )
+    # P1: Contextual summarization
+    use_rcs: bool = Field(
+        default=False,
+        description="Use PaperQA2-style contextual summarization"
+    )
+    rcs_top_k: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Top sources to keep after RCS ranking"
+    )
+    # P0 options (inherited)
+    run_quality_gate: bool = Field(default=True, description="Evaluate source quality first")
+    detect_contradictions: bool = Field(default=True, description="Surface source contradictions")
+    verify_citations: bool = Field(default=False, description="NLI verify citations (slower)")
+
+
+class SynthesizeResponseP1(BaseModel):
+    """P1 enhanced synthesis response with outline and RCS info."""
+
+    query: str
+    content: str = Field(..., description="Synthesized narrative")
+    citations: list[CitationSchema]
+    source_attribution: list[SynthesisAttributionSchema] = Field(default_factory=list)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    style_used: str
+    word_count: int
+    model: str | None = None
+    usage: dict | None = None
+    # P0 Enhancement fields
+    quality_gate: QualityGateSchema | None = None
+    contradictions: list[ContradictionSchema] = Field(default_factory=list)
+    verified_claims: list[VerifiedClaimSchema] = Field(default_factory=list)
+    # P1 Enhancement fields
+    preset_used: str | None = None
+    outline: list[str] | None = Field(
+        default=None,
+        description="Section headings if outline-guided"
+    )
+    sections: dict[str, str] | None = Field(
+        default=None,
+        description="Section contents if outline-guided"
+    )
+    critique: CritiqueSchema | None = None
+    rcs_summaries: list[ContextualSummarySchema] | None = Field(
+        default=None,
+        description="Contextual summaries if RCS was used"
+    )
+    sources_filtered: int | None = Field(
+        default=None,
+        description="Sources removed by RCS filtering"
+    )

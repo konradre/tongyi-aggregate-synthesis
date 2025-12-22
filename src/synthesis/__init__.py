@@ -30,6 +30,28 @@ from .contradictions import (
     ContradictionReport,
     ContradictionSeverity,
 )
+# P1 Enhancements
+from .outline import (
+    OutlineGuidedSynthesizer,
+    OutlinedSynthesis,
+    SynthesisOutline,
+    CritiqueResult,
+    generate_outline_heuristic,
+)
+from .rcs import (
+    RCSPreprocessor,
+    RCSResult,
+    ContextualSummary,
+)
+from .presets import (
+    SynthesisPreset,
+    PresetName,
+    get_preset,
+    get_preset_by_enum,
+    list_presets,
+    PresetOverrides,
+    apply_overrides,
+)
 
 __all__ = [
     # Engine
@@ -59,4 +81,22 @@ __all__ = [
     "Contradiction",
     "ContradictionReport",
     "ContradictionSeverity",
+    # P1: Outline-Guided Synthesis
+    "OutlineGuidedSynthesizer",
+    "OutlinedSynthesis",
+    "SynthesisOutline",
+    "CritiqueResult",
+    "generate_outline_heuristic",
+    # P1: Contextual Summarization (RCS)
+    "RCSPreprocessor",
+    "RCSResult",
+    "ContextualSummary",
+    # P1: Synthesis Presets
+    "SynthesisPreset",
+    "PresetName",
+    "get_preset",
+    "get_preset_by_enum",
+    "list_presets",
+    "PresetOverrides",
+    "apply_overrides",
 ]

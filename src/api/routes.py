@@ -36,6 +36,16 @@ from .schemas import (
     DiscoverRequestEnhanced,
     SynthesizeRequestEnhanced,
     SynthesizeResponseEnhanced,
+    # P1 Enhancement schemas
+    PresetInfoSchema,
+    PresetListResponse,
+    FocusModeInfoSchema,
+    FocusModeListResponse,
+    CritiqueSchema,
+    ContextualSummarySchema,
+    DiscoverRequestP1,
+    SynthesizeRequestP1,
+    SynthesizeResponseP1,
 )
 from ..search import SearchAggregator
 from ..synthesis import (
@@ -49,6 +59,13 @@ from ..synthesis import (
     ContradictionDetector,
     CitationVerifier,
     extract_claims_with_citations,
+    # P1 Enhancements
+    OutlineGuidedSynthesizer,
+    RCSPreprocessor,
+    get_preset,
+    get_preset_by_enum,
+    list_presets,
+    PresetName,
 )
 from ..discovery import (
     Explorer,
@@ -56,6 +73,12 @@ from ..discovery import (
     ConnectorRouter,
     QueryExpander,
     GapFiller,
+    # P1 Enhancements
+    FocusModeType,
+    FocusModeSelector,
+    FOCUS_MODES,
+    get_focus_mode,
+    get_gap_categories,
 )
 from ..config import settings
 
@@ -708,3 +731,379 @@ async def synthesize_enhanced(request: SynthesizeRequestEnhanced):
         contradictions=contradictions_list,
         verified_claims=verified_claims_list,
     )
+
+
+# =============================================================================
+# P1 Enhancement Endpoints
+# =============================================================================
+
+
+@router.get("/presets", response_model=PresetListResponse)
+async def get_presets():
+    """
+    List available synthesis presets.
+
+    Presets are pre-configured settings bundles (PaperQA2-inspired):
+    - comprehensive: Full analysis with all verification steps
+    - fast: Quick synthesis, skip verification for speed
+    - contracrow: Optimized for finding contradictions
+    - academic: Scholarly synthesis with rigorous citations
+    - tutorial: Step-by-step guide format
+    """
+    presets = list_presets()
+    return PresetListResponse(
+        presets=[
+            PresetInfoSchema(
+                name=p["name"],
+                value=p["value"],
+                description=p["description"],
+                style=p["style"],
+                max_tokens=p["max_tokens"],
+            )
+            for p in presets
+        ]
+    )
+
+
+@router.get("/focus-modes", response_model=FocusModeListResponse)
+async def get_focus_modes():
+    """
+    List available focus modes for discovery.
+
+    Focus modes are domain-specific configurations (Perplexica-inspired):
+    - general: Broad technical questions
+    - academic: Research papers, scientific studies
+    - documentation: Library/framework docs, API references
+    - comparison: X vs Y evaluations
+    - debugging: Error messages, bug investigation
+    - tutorial: How-to guides, step-by-step learning
+    - news: Recent events, announcements
+    """
+    modes = []
+    for mode_type, mode in FOCUS_MODES.items():
+        modes.append(FocusModeInfoSchema(
+            name=mode.name,
+            value=mode_type.value,
+            description=mode.description,
+            search_expansion=mode.search_expansion,
+            gap_categories=mode.gap_categories,
+        ))
+    return FocusModeListResponse(modes=modes)
+
+
+@router.post("/synthesize/p1", response_model=SynthesizeResponseP1)
+async def synthesize_p1(request: SynthesizeRequestP1):
+    """
+    P1 enhanced synthesis with presets, outline-guided synthesis, and RCS.
+
+    New features over /synthesize/enhanced:
+    1. Preset-driven configuration (comprehensive, fast, contracrow, academic, tutorial)
+    2. Outline-guided synthesis (SciRAG plan-critique-refine cycle)
+    3. RCS contextual summarization (PaperQA2-style source ranking)
+
+    Use preset=None to manually configure individual options.
+    """
+    llm_client = _get_llm_client()
+
+    # Convert request sources to internal format
+    sources = [
+        PreGatheredSource(
+            origin=s.origin,
+            url=s.url,
+            title=s.title,
+            content=s.content,
+            source_type=s.source_type,
+            metadata=s.metadata,
+        )
+        for s in request.sources
+    ]
+
+    # Determine configuration from preset or individual options
+    preset_used = None
+    if request.preset:
+        preset = get_preset(request.preset)
+        preset_used = preset.name
+        use_outline = preset.use_outline
+        use_rcs = preset.use_rcs
+        run_quality_gate = preset.run_quality_gate
+        detect_contradictions = preset.detect_contradictions
+        verify_citations = request.verify_citations  # Always from request
+        max_tokens = preset.max_tokens
+        style_str = preset.style.value
+    else:
+        use_outline = request.use_outline
+        use_rcs = request.use_rcs
+        run_quality_gate = request.run_quality_gate
+        detect_contradictions = request.detect_contradictions
+        verify_citations = request.verify_citations
+        max_tokens = request.max_tokens
+        style_str = request.style
+
+    # Map style string to enum
+    style_map = {
+        "comprehensive": SynthesisStyle.COMPREHENSIVE,
+        "concise": SynthesisStyle.CONCISE,
+        "comparative": SynthesisStyle.COMPARATIVE,
+        "tutorial": SynthesisStyle.TUTORIAL,
+        "academic": SynthesisStyle.ACADEMIC,
+    }
+    style = style_map.get(style_str, SynthesisStyle.COMPREHENSIVE)
+
+    quality_gate_result = None
+    contradictions_list = []
+    verified_claims_list = []
+    rcs_summaries_list = None
+    sources_filtered = None
+    outline_sections = None
+    sections_dict = None
+    critique_result = None
+    sources_for_synthesis = sources
+
+    # Step 1: Quality Gate (CRAG-style)
+    if run_quality_gate:
+        quality_gate = SourceQualityGate(
+            llm_client=llm_client,
+            model=settings.llm_model,
+        )
+        gate_result = await quality_gate.evaluate(request.query, sources)
+
+        quality_gate_result = QualityGateSchema(
+            decision=gate_result.decision.value,
+            avg_quality=gate_result.avg_quality,
+            passed_count=len(gate_result.good_sources),
+            rejected_count=len(gate_result.rejected_sources),
+            suggestion=gate_result.suggestion,
+        )
+
+        if gate_result.decision == QualityDecision.REJECT:
+            return SynthesizeResponseP1(
+                query=request.query,
+                content=f"Source quality insufficient. {gate_result.suggestion or 'Try gathering more relevant sources.'}",
+                citations=[],
+                source_attribution=[],
+                confidence=0.0,
+                style_used=style_str,
+                word_count=0,
+                model=settings.llm_model,
+                quality_gate=quality_gate_result,
+                preset_used=preset_used,
+            )
+        elif gate_result.decision == QualityDecision.PARTIAL:
+            sources_for_synthesis = gate_result.good_sources
+
+    # Step 2: RCS Contextual Summarization (PaperQA2-style)
+    if use_rcs and len(sources_for_synthesis) > 1:
+        rcs = RCSPreprocessor(
+            llm_client=llm_client,
+            model=settings.llm_model,
+        )
+        rcs_result = await rcs.prepare(
+            query=request.query,
+            sources=sources_for_synthesis,
+            top_k=request.rcs_top_k,
+        )
+
+        sources_filtered = rcs_result.total_sources - rcs_result.kept_sources
+        rcs_summaries_list = [
+            ContextualSummarySchema(
+                source_title=s.source.title,
+                source_url=s.source.url,
+                summary=s.summary,
+                relevance_score=s.relevance_score,
+                key_points=s.key_points,
+            )
+            for s in rcs_result.summaries
+        ]
+
+        # Use top-ranked sources for synthesis
+        sources_for_synthesis = [s.source for s in rcs_result.summaries]
+
+    # Step 3: Contradiction Detection (PaperQA2-style)
+    contradiction_context = ""
+    if detect_contradictions and len(sources_for_synthesis) >= 2:
+        detector = ContradictionDetector(
+            llm_client=llm_client,
+            model=settings.llm_model,
+        )
+        contradictions = await detector.detect(request.query, sources_for_synthesis)
+
+        contradictions_list = [
+            ContradictionSchema(
+                topic=c.topic,
+                position_a=c.position_a,
+                source_a=c.source_a,
+                position_b=c.position_b,
+                source_b=c.source_b,
+                severity=c.severity.value,
+                resolution_hint=c.resolution_hint,
+            )
+            for c in contradictions
+        ]
+
+        contradiction_context = detector.format_for_synthesis(contradictions)
+
+    # Step 4: Synthesis (standard or outline-guided)
+    if use_outline:
+        # Outline-guided synthesis (SciRAG)
+        synthesizer = OutlineGuidedSynthesizer(
+            llm_client=llm_client,
+            model=settings.llm_model,
+        )
+        outlined_result = await synthesizer.synthesize(
+            query=request.query,
+            sources=sources_for_synthesis,
+            style=style,
+            max_tokens_per_section=max_tokens // 4,
+        )
+
+        content = outlined_result.content
+        outline_sections = outlined_result.outline.sections
+        sections_dict = outlined_result.sections
+        word_count = outlined_result.word_count
+
+        if outlined_result.critique:
+            critique_result = CritiqueSchema(
+                issues=outlined_result.critique.issues,
+                has_critical=outlined_result.critique.has_critical,
+            )
+
+        # Generate citations from content
+        citations = _extract_citations_from_content(content, sources_for_synthesis)
+        source_attribution = _compute_attribution(content, sources_for_synthesis)
+        confidence = 0.8 if not outlined_result.critique or not outlined_result.critique.has_critical else 0.6
+
+    else:
+        # Standard synthesis
+        aggregator = SynthesisAggregator(
+            llm_client=llm_client,
+            model=settings.llm_model,
+        )
+
+        # Inject contradiction awareness if present
+        if contradiction_context:
+            enhanced_sources = sources_for_synthesis.copy()
+            if enhanced_sources:
+                first = enhanced_sources[0]
+                enhanced_sources[0] = PreGatheredSource(
+                    origin=first.origin,
+                    url=first.url,
+                    title=first.title,
+                    content=f"{first.content}\n\n{contradiction_context}",
+                    source_type=first.source_type,
+                    metadata=first.metadata,
+                )
+            result = await aggregator.synthesize(
+                query=request.query,
+                sources=enhanced_sources,
+                style=style,
+                max_tokens=max_tokens,
+            )
+        else:
+            result = await aggregator.synthesize(
+                query=request.query,
+                sources=sources_for_synthesis,
+                style=style,
+                max_tokens=max_tokens,
+            )
+
+        content = result.content
+        word_count = result.word_count
+        citations = [
+            CitationSchema(
+                id=str(c.get("number", "")),
+                title=c.get("title", ""),
+                url=c.get("url", ""),
+            )
+            for c in result.citations
+        ]
+        source_attribution = [
+            SynthesisAttributionSchema(origin=origin, contribution=contrib)
+            for origin, contrib in result.source_attribution.items()
+        ]
+        confidence = result.confidence
+
+    # Step 5: Citation Verification (VeriCite-style, optional)
+    if verify_citations and citations:
+        verifier = CitationVerifier()
+        claims_with_citations = extract_claims_with_citations(
+            content,
+            sources_for_synthesis,
+        )
+
+        for claim, evidence, source_num in claims_with_citations[:10]:
+            verified = verifier.verify(claim, evidence, source_num)
+            verified_claims_list.append(VerifiedClaimSchema(
+                claim=verified.claim,
+                source_number=verified.source_number,
+                label=verified.label,
+                confidence=verified.confidence,
+            ))
+
+    return SynthesizeResponseP1(
+        query=request.query,
+        content=content,
+        citations=citations,
+        source_attribution=source_attribution,
+        confidence=confidence,
+        style_used=style_str,
+        word_count=word_count,
+        model=settings.llm_model,
+        quality_gate=quality_gate_result,
+        contradictions=contradictions_list,
+        verified_claims=verified_claims_list,
+        preset_used=preset_used,
+        outline=outline_sections,
+        sections=sections_dict,
+        critique=critique_result,
+        rcs_summaries=rcs_summaries_list,
+        sources_filtered=sources_filtered,
+    )
+
+
+def _extract_citations_from_content(
+    content: str,
+    sources: list[PreGatheredSource],
+) -> list[CitationSchema]:
+    """Extract citation references from content."""
+    citations = []
+    seen = set()
+
+    # Find all [N] patterns
+    pattern = r"\[(\d+)\]"
+    for match in re.finditer(pattern, content):
+        num = int(match.group(1))
+        if num not in seen and 1 <= num <= len(sources):
+            seen.add(num)
+            source = sources[num - 1]
+            citations.append(CitationSchema(
+                id=str(num),
+                title=source.title,
+                url=source.url,
+            ))
+
+    return citations
+
+
+def _compute_attribution(
+    content: str,
+    sources: list[PreGatheredSource],
+) -> list[SynthesisAttributionSchema]:
+    """Compute source attribution breakdown."""
+    # Count citation mentions per origin
+    origin_counts: dict[str, int] = {}
+    pattern = r"\[(\d+)\]"
+
+    for match in re.finditer(pattern, content):
+        num = int(match.group(1))
+        if 1 <= num <= len(sources):
+            origin = sources[num - 1].origin
+            origin_counts[origin] = origin_counts.get(origin, 0) + 1
+
+    total = sum(origin_counts.values()) or 1
+    return [
+        SynthesisAttributionSchema(
+            origin=origin,
+            contribution=count / total,
+        )
+        for origin, count in origin_counts.items()
+    ]
