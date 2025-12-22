@@ -288,3 +288,86 @@ class AskResponse(BaseModel):
     citations: list[CitationSchema]
     sources: list[SourceSchema]
     model: str | None = None
+
+
+# =============================================================================
+# P0 Enhancement Schemas
+# =============================================================================
+
+
+class ContradictionSchema(BaseModel):
+    """A detected contradiction between sources."""
+
+    topic: str = Field(..., description="What sources disagree about")
+    position_a: str
+    source_a: int
+    position_b: str
+    source_b: int
+    severity: str = Field(..., description="minor, moderate, or major")
+    resolution_hint: str = Field(default="")
+
+
+class QualityGateSchema(BaseModel):
+    """Result of source quality evaluation."""
+
+    decision: str = Field(..., description="proceed, reject, or partial")
+    avg_quality: float
+    passed_count: int
+    rejected_count: int
+    suggestion: str | None = None
+
+
+class VerifiedClaimSchema(BaseModel):
+    """A verified claim with NLI results."""
+
+    claim: str
+    source_number: int
+    label: str = Field(..., description="supported, contradicted, or neutral")
+    confidence: float
+
+
+class DiscoverRequestEnhanced(BaseModel):
+    """Enhanced discover request with P0 options."""
+
+    query: str = Field(..., description="Research query")
+    top_k: int = Field(default=15, ge=1, le=50, description="Number of sources")
+    expand_searches: bool = Field(default=True, description="Expand to related concepts")
+    fill_gaps: bool = Field(default=True, description="Auto-search for knowledge gaps")
+    use_adaptive_routing: bool = Field(default=True, description="Route to optimal connectors")
+    connectors: list[str] | None = Field(default=None)
+
+
+class SynthesizeRequestEnhanced(BaseModel):
+    """Enhanced synthesis request with P0 options."""
+
+    query: str = Field(..., description="Original research query")
+    sources: list[PreGatheredSourceSchema] = Field(
+        ...,
+        description="Pre-gathered sources from Ref/Exa/Jina"
+    )
+    style: Literal[
+        "comprehensive", "concise", "comparative", "tutorial", "academic"
+    ] = Field(default="comprehensive")
+    max_tokens: int = Field(default=3000, ge=500, le=8000)
+    # P0 Enhancement options
+    run_quality_gate: bool = Field(default=True, description="Evaluate source quality first")
+    detect_contradictions: bool = Field(default=True, description="Surface source contradictions")
+    verify_citations: bool = Field(default=False, description="NLI verify citations (slower)")
+
+
+class SynthesizeResponseEnhanced(BaseModel):
+    """Enhanced synthesis response with P0 fields."""
+
+    query: str
+    content: str = Field(..., description="Synthesized narrative")
+    citations: list[CitationSchema]
+    source_attribution: list[SynthesisAttributionSchema] = Field(default_factory=list)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    style_used: str
+    word_count: int
+    model: str | None = None
+    usage: dict | None = None
+    # P0 Enhancement fields
+    quality_gate: QualityGateSchema | None = None
+    contradictions: list[ContradictionSchema] = Field(default_factory=list)
+    verified_claims: list[VerifiedClaimSchema] = Field(default_factory=list)

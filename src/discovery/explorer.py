@@ -10,15 +10,25 @@ Key differentiator from basic search:
 
 This is about mapping the knowledge space around a query, not just
 finding relevant documents.
+
+Enhanced with P0 Cold-Start features:
+- Query Expansion (HyDE-style variant generation)
+- Adaptive Connector Routing (query type → optimal connectors)
+- Iterative Gap-Filling (auto-search for detected gaps)
 """
 
 import asyncio
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ..connectors.base import Source
 from ..config import settings
+
+if TYPE_CHECKING:
+    from .routing import ConnectorRouter
+    from .expansion import QueryExpander
+    from .gap_filler import GapFiller
 
 
 @dataclass
@@ -129,6 +139,11 @@ class Explorer:
     - Expand breadth beyond the literal query
     - Identify what the user doesn't know to ask
     - Score URLs by gap coverage, not just relevance
+
+    Enhanced with P0 Cold-Start features when components provided:
+    - Query expansion for semantic breadth
+    - Adaptive routing to optimal connectors
+    - Iterative gap-filling for coverage
     """
 
     def __init__(
@@ -136,6 +151,9 @@ class Explorer:
         llm_client,
         search_aggregator,
         model: str = None,
+        router: Optional["ConnectorRouter"] = None,
+        expander: Optional["QueryExpander"] = None,
+        gap_filler: Optional["GapFiller"] = None,
     ):
         """
         Initialize the explorer.
@@ -144,16 +162,25 @@ class Explorer:
             llm_client: OpenAI-compatible LLM client
             search_aggregator: SearchAggregator instance for fetching sources
             model: Model name for LLM calls
+            router: Optional ConnectorRouter for adaptive routing
+            expander: Optional QueryExpander for query expansion
+            gap_filler: Optional GapFiller for iterative gap-filling
         """
         self.llm_client = llm_client
         self.search_aggregator = search_aggregator
         self.model = model or settings.llm_model
+
+        # P0 Enhancement components (optional)
+        self.router = router
+        self.expander = expander
+        self.gap_filler = gap_filler
 
     async def discover(
         self,
         query: str,
         top_k: int = 15,
         expand_searches: bool = True,
+        fill_gaps: bool = True,
     ) -> DiscoveryResult:
         """
         Perform exploratory discovery.
@@ -162,28 +189,52 @@ class Explorer:
             query: The research query
             top_k: Number of sources to return
             expand_searches: Whether to run expanded searches for breadth
+            fill_gaps: Whether to auto-search for high-priority gaps
 
         Returns:
             DiscoveryResult with landscape, gaps, and scored sources
         """
+        # Step 0: Query expansion (P0 Enhancement)
+        expanded_queries = []
+        if self.expander and expand_searches:
+            expanded = await self.expander.expand(query, num_variants=3)
+            expanded_queries = expanded.variants
+
         # Step 1: Expand the knowledge landscape
         landscape = await self._expand_landscape(query)
 
-        # Step 2: Run searches (original + expanded)
+        # Step 2: Run searches (original + expanded + variants)
         sources = await self._gather_sources(
-            query, landscape, top_k, expand_searches
+            query, landscape, top_k, expand_searches, expanded_queries
         )
 
         # Step 3: Identify knowledge gaps
         gaps = await self._identify_gaps(query, sources)
 
-        # Step 4: Score sources against gaps
+        # Step 4: Iterative gap-filling (P0 Enhancement)
+        if fill_gaps and self.gap_filler and gaps:
+            fill_result = await self.gap_filler.fill(
+                query=query,
+                initial_sources=sources,
+                gaps=gaps,
+                max_iterations=1,  # Single iteration for speed
+            )
+            # Merge gap-filling sources
+            seen_urls = {s.url for s in sources}
+            for source in fill_result.new_sources:
+                if source.url not in seen_urls:
+                    sources.append(source)
+                    seen_urls.add(source.url)
+            # Update gaps with remaining unfilled ones
+            gaps = [g for g in gaps if g.gap not in fill_result.gaps_filled]
+
+        # Step 5: Score sources against gaps
         scored_sources = await self._score_sources(query, sources, gaps)
 
-        # Step 5: Generate synthesis preview
+        # Step 6: Generate synthesis preview
         preview = await self._generate_preview(query, scored_sources[:5])
 
-        # Step 6: Recommend deep dives
+        # Step 7: Recommend deep dives
         deep_dives = [
             s.source.url for s in scored_sources
             if s.recommended_priority <= 2
@@ -212,9 +263,14 @@ class Explorer:
         landscape: KnowledgeLandscape,
         top_k: int,
         expand_searches: bool,
+        expanded_queries: list[str] = None,
     ) -> list[Source]:
         """Gather sources from multiple search angles."""
         searches = [query]  # Always include original
+
+        # Add HyDE-style expanded queries (P0 Enhancement)
+        if expanded_queries:
+            searches.extend(expanded_queries[:3])
 
         if expand_searches:
             # Add searches for implicit topics
@@ -225,10 +281,24 @@ class Explorer:
             for concept in landscape.related_concepts[:2]:
                 searches.append(f"{concept} {landscape.explicit_topics[0] if landscape.explicit_topics else query}")
 
+        # Adaptive connector routing (P0 Enhancement)
+        connector_weights = None
+        if self.router:
+            routing = self.router.route(query)
+            connector_weights = routing.connector_weights
+            # Log routing decision for debugging
+            # print(f"Query type: {routing.query_type}, Primary: {routing.primary_connector}")
+
         # Run searches in parallel
         all_sources = []
+        per_search_k = max(5, top_k // len(searches) + 3)
+
         tasks = [
-            self.search_aggregator.search(q, top_k=top_k // len(searches) + 5)
+            self.search_aggregator.search(
+                q,
+                top_k=per_search_k,
+                connector_weights=connector_weights,
+            )
             for q in searches
         ]
 
