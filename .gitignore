@@ -23,6 +23,7 @@ TEST_OUTCOME_REPORT.md
 # Local reference docs
 REASONING_MODEL_COMPATIBILITY.md
 LLM_ENDPOINT_QUICKREF.md
+PROGRESS.md
 
 # Test artifacts
 tests/.env
