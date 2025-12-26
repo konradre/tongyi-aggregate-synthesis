@@ -276,7 +276,7 @@ All configuration via environment variables with `RESEARCH_` prefix.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESEARCH_LLM_API_BASE` | `http://192.168.1.120:8080/v1` | LLM API endpoint |
+| `RESEARCH_LLM_API_BASE` | `http://192.168.1.119:8080/v1` | LLM API endpoint |
 | `RESEARCH_LLM_MODEL` | `tongyi-deepresearch-30b` | Model name |
 | `RESEARCH_LLM_TEMPERATURE` | `0.85` | Generation temperature |
 | `RESEARCH_LLM_MAX_TOKENS` | `8192` | Max output tokens |
