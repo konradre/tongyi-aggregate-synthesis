@@ -120,7 +120,7 @@ Ranking:"""
         if not sources:
             return RCSResult(summaries=[], total_sources=0, kept_sources=0)
 
-        # Create contextual summaries
+        # Create contextual summaries (sequential - single GPU can only process one at a time)
         summaries = []
         for source in sources:
             if self.llm_client:

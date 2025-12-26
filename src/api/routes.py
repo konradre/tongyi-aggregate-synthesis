@@ -47,7 +47,6 @@ from .schemas import (
     SynthesizeRequestP1,
     SynthesizeResponseP1,
 )
-from ..search import SearchAggregator
 from ..synthesis import (
     SynthesisEngine,
     SynthesisAggregator,
@@ -67,6 +66,7 @@ from ..synthesis import (
     list_presets,
     PresetName,
 )
+from ..search import SearchAggregator
 from ..discovery import (
     Explorer,
     # P0 Enhancements
@@ -150,15 +150,25 @@ async def research(request: ResearchRequest):
 
     This replicates Perplexity's deep research capability using
     local connectors and Tongyi DeepResearch model.
+
+    P1 Enhancements (when preset or focus_mode is specified):
+    - preset: Use P1 synthesis with quality gate, RCS, contradictions
+    - focus_mode: Optimize discovery for specific domains
     """
     aggregator = SearchAggregator()
-    engine = SynthesisEngine()
+    llm_client = _get_llm_client()
 
     if not aggregator.connectors:
         raise HTTPException(
             status_code=503,
             detail="No search connectors configured"
         )
+
+    # P1: Apply focus mode if specified
+    focus_mode_used = None
+    if request.focus_mode:
+        focus_mode = get_focus_mode(FocusModeType(request.focus_mode))
+        focus_mode_used = focus_mode.name
 
     # Step 1: Aggregate search results
     sources, raw_results = await aggregator.search(
@@ -173,7 +183,122 @@ async def research(request: ResearchRequest):
             detail="No search results found"
         )
 
-    # Step 2: Synthesize with LLM
+    # P1: Use enhanced synthesis when preset is specified
+    if request.preset:
+        preset = get_preset(request.preset)
+        preset_used = preset.name
+
+        # Convert search sources to PreGatheredSource format
+        pre_gathered = [
+            PreGatheredSource(
+                origin=s.connector,
+                url=s.url,
+                title=s.title,
+                content=s.content,
+                source_type="article",
+                metadata={"score": s.score},
+            )
+            for s in sources
+        ]
+
+        # Initialize P1 components
+        quality_gate_result = None
+        contradictions_list = []
+        rcs_summaries_list = None
+        sources_for_synthesis = pre_gathered
+
+        # Quality Gate
+        if preset.run_quality_gate:
+            quality_gate = SourceQualityGate(
+                llm_client=llm_client,
+                model=settings.llm_model,
+            )
+            gate_result = await quality_gate.evaluate(request.query, pre_gathered)
+            quality_gate_result = QualityGateSchema(
+                decision=gate_result.decision.value,
+                avg_quality=gate_result.avg_quality,
+                passed_count=len(gate_result.good_sources),
+                rejected_count=len(gate_result.rejected_sources),
+                suggestion=gate_result.suggestion,
+            )
+            if gate_result.decision == QualityDecision.PARTIAL:
+                sources_for_synthesis = gate_result.good_sources
+
+        # RCS Preprocessing
+        if preset.use_rcs and len(sources_for_synthesis) > 1:
+            rcs = RCSPreprocessor(llm_client=llm_client, model=settings.llm_model)
+            rcs_result = await rcs.prepare(
+                query=request.query,
+                sources=sources_for_synthesis,
+                top_k=5,
+            )
+            rcs_summaries_list = [
+                ContextualSummarySchema(
+                    source_title=s.source.title,
+                    source_url=s.source.url,
+                    summary=s.summary,
+                    relevance_score=s.relevance_score,
+                    key_points=s.key_points,
+                )
+                for s in rcs_result.summaries
+            ]
+            sources_for_synthesis = [s.source for s in rcs_result.summaries]
+
+        # Contradiction Detection
+        if preset.detect_contradictions and len(sources_for_synthesis) >= 2:
+            detector = ContradictionDetector(llm_client=llm_client, model=settings.llm_model)
+            contradictions = await detector.detect(request.query, sources_for_synthesis)
+            contradictions_list = [
+                ContradictionSchema(
+                    topic=c.topic,
+                    position_a=c.position_a,
+                    source_a=c.source_a,
+                    position_b=c.position_b,
+                    source_b=c.source_b,
+                    severity=c.severity.value,
+                    resolution_hint=c.resolution_hint,
+                )
+                for c in contradictions
+            ]
+
+        # Synthesis
+        synth_aggregator = SynthesisAggregator(llm_client=llm_client, model=settings.llm_model)
+        result = await synth_aggregator.synthesize(
+            query=request.query,
+            sources=sources_for_synthesis,
+            style=preset.style,
+            max_tokens=preset.max_tokens,
+        )
+
+        return ResearchResponse(
+            query=request.query,
+            content=result.content,
+            citations=[
+                CitationSchema(
+                    id=str(c.get("number", "")),
+                    title=c.get("title", ""),
+                    url=c.get("url", ""),
+                )
+                for c in result.citations
+            ],
+            sources=[
+                SourceSchema(
+                    id=s.id, title=s.title, url=s.url,
+                    content=s.content, score=s.score, connector=s.connector,
+                )
+                for s in sources
+            ],
+            connectors_used=list(raw_results.keys()),
+            model=settings.llm_model,
+            preset_used=preset_used,
+            focus_mode_used=focus_mode_used,
+            quality_gate=quality_gate_result,
+            contradictions=contradictions_list,
+            rcs_summaries=rcs_summaries_list,
+        )
+
+    # Standard synthesis (no preset)
+    engine = SynthesisEngine()
     result = await engine.research(
         query=request.query,
         sources=sources,
@@ -207,6 +332,7 @@ async def research(request: ResearchRequest):
         connectors_used=list(raw_results.keys()),
         model=result.get("model"),
         usage=result.get("usage"),
+        focus_mode_used=focus_mode_used,
     )
 
 

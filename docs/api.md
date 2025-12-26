@@ -78,16 +78,43 @@ Full research pipeline: search + LLM synthesis with citations.
 | `top_k` | integer | No | 10 | Results per source (1-50) |
 | `connectors` | string[] | No | all | Specific connectors to use |
 | `reasoning_effort` | string | No | "medium" | Analysis depth: "low", "medium", "high" |
+| `preset` | string | No | null | Synthesis preset (enables P1 features) |
+| `focus_mode` | string | No | null | Discovery focus mode |
 
-**Example Request**
+**Presets** (P1 Features)
+
+| Preset | Latency | Features |
+|--------|---------|----------|
+| `fast` | ~4-5s | Basic synthesis, no verification |
+| `comprehensive` | ~45-55s | Quality gate + RCS + contradiction detection |
+| `contracrow` | ~45-55s | Focus on contradiction detection |
+| `academic` | ~40-50s | Academic style with outline |
+| `tutorial` | ~40-50s | Tutorial style with outline |
+
+**Focus Modes**
+
+`general`, `academic`, `documentation`, `comparison`, `debugging`, `tutorial`, `news`
+
+**Example Request (Basic)**
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/research \
   -H "Content-Type: application/json" \
   -d '{
     "query": "What is RAG and how does it work?",
-    "top_k": 10,
     "reasoning_effort": "high"
+  }'
+```
+
+**Example Request (With Preset)**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/research \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is RAG?",
+    "preset": "comprehensive",
+    "focus_mode": "documentation"
   }'
 ```
 
@@ -96,26 +123,23 @@ curl -X POST http://localhost:8000/api/v1/research \
 ```json
 {
   "query": "What is RAG and how does it work?",
-  "content": "Retrieval Augmented Generation (RAG) is a technique that enhances large language models by incorporating external knowledge retrieval [sx_a1b2c3d4]. The process works in three main steps:\n\n1. **Retrieval**: When a query is received, relevant documents are retrieved from a knowledge base using semantic search [tv_e5f6g7h8]...\n\n## Sources\n\n[sx_a1b2c3d4] RAG Tutorial - LangChain - https://python.langchain.com/docs/tutorials/rag/\n[tv_e5f6g7h8] Understanding RAG - https://example.com/rag",
-  "citations": [
-    {
-      "id": "sx_a1b2c3d4",
-      "title": "RAG Tutorial - LangChain",
-      "url": "https://python.langchain.com/docs/tutorials/rag/"
-    },
-    {
-      "id": "tv_e5f6g7h8",
-      "title": "Understanding RAG",
-      "url": "https://example.com/rag"
-    }
-  ],
+  "content": "Retrieval Augmented Generation (RAG) is a technique...",
+  "citations": [...],
   "sources": [...],
   "connectors_used": ["searxng", "tavily"],
   "model": "tongyi-deepresearch-30b",
-  "usage": {
-    "prompt_tokens": 4521,
-    "completion_tokens": 1823
-  }
+  "usage": {"prompt_tokens": 4521, "completion_tokens": 1823},
+  "preset_used": "Comprehensive",
+  "focus_mode_used": "documentation",
+  "quality_gate": {
+    "decision": "proceed",
+    "passed_sources": 5,
+    "filtered_sources": 0
+  },
+  "contradictions": [],
+  "rcs_summaries": [
+    {"source_title": "RAG Tutorial", "summary": "...", "relevance_score": 0.85}
+  ]
 }
 ```
 
@@ -135,6 +159,58 @@ Same as `/api/v1/research` (reasoning_effort is ignored and set to "low").
 curl -X POST http://localhost:8000/api/v1/ask \
   -H "Content-Type: application/json" \
   -d '{"query": "What is the capital of France?"}'
+```
+
+---
+
+### GET /api/v1/presets
+
+List available synthesis presets.
+
+**Response**
+
+```json
+{
+  "presets": [
+    {
+      "name": "fast",
+      "description": "Quick synthesis without verification",
+      "features": ["basic_synthesis"]
+    },
+    {
+      "name": "comprehensive",
+      "description": "Full pipeline with quality gate, RCS, and contradiction detection",
+      "features": ["quality_gate", "rcs", "contradictions", "outline"]
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/v1/focus-modes
+
+List available discovery focus modes.
+
+**Response**
+
+```json
+{
+  "focus_modes": [
+    {
+      "name": "general",
+      "description": "Balanced search across all sources"
+    },
+    {
+      "name": "academic",
+      "description": "Prioritize scholarly and research sources"
+    },
+    {
+      "name": "documentation",
+      "description": "Focus on official docs and technical references"
+    }
+  ]
+}
 ```
 
 ---

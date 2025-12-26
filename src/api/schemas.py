@@ -53,6 +53,19 @@ class ResearchRequest(BaseModel):
         default="medium",
         description="Depth of analysis"
     )
+    # P1 Enhancement options
+    preset: Literal[
+        "comprehensive", "fast", "contracrow", "academic", "tutorial"
+    ] | None = Field(
+        default=None,
+        description="Synthesis preset (enables P1 features when set)"
+    )
+    focus_mode: Literal[
+        "general", "academic", "documentation", "comparison", "debugging", "tutorial", "news"
+    ] | None = Field(
+        default=None,
+        description="Discovery focus mode for query optimization"
+    )
 
 
 class CitationSchema(BaseModel):
@@ -73,6 +86,12 @@ class ResearchResponse(BaseModel):
     connectors_used: list[str]
     model: str | None = None
     usage: dict | None = None
+    # P1 Enhancement fields (populated when preset is used)
+    preset_used: str | None = None
+    focus_mode_used: str | None = None
+    quality_gate: "QualityGateSchema | None" = None
+    contradictions: "list[ContradictionSchema]" = []
+    rcs_summaries: "list[ContextualSummarySchema] | None" = None
 
 
 class HealthResponse(BaseModel):
@@ -278,6 +297,11 @@ class AskRequest(BaseModel):
     query: str = Field(..., description="Question to answer")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of sources")
     connectors: list[str] | None = Field(default=None)
+    # P1 Enhancement options
+    preset: Literal["fast", "comprehensive"] | None = Field(
+        default=None,
+        description="Synthesis preset (fast recommended for /ask)"
+    )
 
 
 class AskResponse(BaseModel):
@@ -529,3 +553,7 @@ class SynthesizeResponseP1(BaseModel):
         default=None,
         description="Sources removed by RCS filtering"
     )
+
+
+# Rebuild models with forward references
+ResearchResponse.model_rebuild()

@@ -55,6 +55,7 @@ curl http://localhost:8000/api/v1/health
 | `/api/v1/research` | POST | Full research with LLM synthesis |
 | `/api/v1/ask` | POST | Quick answers (low reasoning effort) |
 | `/api/v1/presets` | GET | List available synthesis presets |
+| `/api/v1/focus-modes` | GET | List available focus modes |
 
 ## Example Usage
 
@@ -73,7 +74,24 @@ curl -X POST http://localhost:8000/api/v1/research \
 curl -X POST http://localhost:8000/api/v1/research \
   -H "Content-Type: application/json" \
   -d '{"query": "FastAPI authentication", "focus_mode": "documentation"}'
+
+# With preset (enables quality gate, RCS, contradiction detection)
+curl -X POST http://localhost:8000/api/v1/research \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is RAG?", "preset": "comprehensive"}'
 ```
+
+### Presets
+
+| Preset | Latency | Use Case |
+|--------|---------|----------|
+| `fast` | ~4-5s | Quick answers without verification |
+| `comprehensive` | ~45-55s | Full research with quality checks |
+| `contracrow` | ~45-55s | Focus on finding contradictions |
+| `academic` | ~40-50s | Scholarly style with outline |
+| `tutorial` | ~40-50s | Step-by-step explanations |
+
+*Latency assumes single RTX 3090 GPU running llama.cpp*
 
 ## Architecture
 
