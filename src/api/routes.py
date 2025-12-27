@@ -1,8 +1,8 @@
 """FastAPI routes for research tool."""
 
 import re
-from openai import AsyncOpenAI
 from fastapi import APIRouter, HTTPException
+from ..llm_client import get_llm_client, OpenRouterClient
 from .schemas import (
     # Existing
     SearchRequest,
@@ -85,12 +85,9 @@ from ..config import settings
 router = APIRouter()
 
 
-def _get_llm_client():
-    """Get OpenAI-compatible LLM client."""
-    return AsyncOpenAI(
-        base_url=settings.llm_api_base,
-        api_key=settings.llm_api_key,
-    )
+def _get_llm_client() -> OpenRouterClient:
+    """Get OpenRouter client with automatic fallback support."""
+    return get_llm_client()
 
 
 @router.get("/health", response_model=HealthResponse)
