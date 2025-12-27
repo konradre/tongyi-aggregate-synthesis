@@ -40,6 +40,7 @@ class SearchAggregator:
         query: str,
         top_k: int | None = None,
         connectors: list[str] | None = None,
+        connector_weights: dict[str, float] | None = None,
     ) -> tuple[list[Source], dict[str, SearchResult]]:
         """
         Execute parallel search across connectors and fuse results.
@@ -48,6 +49,7 @@ class SearchAggregator:
             query: Search query
             top_k: Number of results per connector
             connectors: Optional list of connector names to use
+            connector_weights: Optional weights for connector result ranking
 
         Returns:
             Tuple of (fused sources, raw results by connector name)

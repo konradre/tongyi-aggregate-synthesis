@@ -122,6 +122,8 @@ async def list_tools() -> list[Tool]:
                                 "title": {"type": "string"},
                                 "url": {"type": "string"},
                                 "content": {"type": "string"},
+                                "origin": {"type": "string", "description": "Source origin (ref, exa, jina, external)"},
+                                "source_type": {"type": "string", "description": "Type (documentation, code, article)"},
                             },
                             "required": ["title", "content"],
                         },
@@ -129,8 +131,9 @@ async def list_tools() -> list[Tool]:
                     },
                     "style": {
                         "type": "string",
-                        "enum": ["comprehensive", "concise", "technical", "explanatory"],
+                        "enum": ["comprehensive", "concise", "comparative", "academic", "tutorial"],
                         "default": "comprehensive",
+                        "description": "Output style: comprehensive (full analysis), concise (brief), comparative (side-by-side), academic (scholarly), tutorial (step-by-step)",
                     },
                 },
                 "required": ["query", "sources"],
@@ -214,7 +217,7 @@ async def _tool_research(args: dict) -> list[TextContent]:
     client = _get_llm_client()
     engine = SynthesisEngine(client, model=settings.llm_model)
 
-    effort_map = {"low": SynthesisStyle.CONCISE, "medium": SynthesisStyle.COMPREHENSIVE, "high": SynthesisStyle.TECHNICAL}
+    effort_map = {"low": SynthesisStyle.CONCISE, "medium": SynthesisStyle.COMPREHENSIVE, "high": SynthesisStyle.ACADEMIC}
     style = effort_map.get(reasoning_effort, SynthesisStyle.COMPREHENSIVE)
 
     result = await engine.synthesize(
@@ -262,26 +265,40 @@ async def _tool_discover(args: dict) -> list[TextContent]:
     identify_gaps = args.get("identify_gaps", True)
 
     client = _get_llm_client()
-    explorer = Explorer(client, model=settings.llm_model)
+    aggregator = SearchAggregator()
+    explorer = Explorer(client, aggregator, model=settings.llm_model)
 
-    result = await explorer.explore(
+    result = await explorer.discover(
         query=query,
         top_k=top_k,
-        identify_gaps=identify_gaps,
+        fill_gaps=identify_gaps,
     )
 
     lines = [f"# Discovery: {query}\n"]
     lines.append("## Knowledge Landscape\n")
-    lines.append(result.landscape.summary if hasattr(result, 'landscape') else "Exploration complete.")
+    if hasattr(result, 'landscape') and result.landscape:
+        landscape = result.landscape
+        lines.append(f"**Explicit Topics:** {', '.join(landscape.explicit_topics)}")
+        if landscape.implicit_topics:
+            lines.append(f"**Implicit Topics:** {', '.join(landscape.implicit_topics)}")
+        if landscape.related_concepts:
+            lines.append(f"**Related Concepts:** {', '.join(landscape.related_concepts)}")
+    else:
+        lines.append("Exploration complete.")
 
-    if identify_gaps and hasattr(result, 'gaps') and result.gaps:
+    if identify_gaps and hasattr(result, 'knowledge_gaps') and result.knowledge_gaps:
         lines.append("\n## Knowledge Gaps\n")
-        for gap in result.gaps:
-            lines.append(f"- **{gap.category}**: {gap.description}")
+        for gap in result.knowledge_gaps:
+            lines.append(f"- **{gap.gap}** ({gap.importance}): {gap.description}")
 
     lines.append(f"\n## Sources ({len(result.sources)})\n")
     for s in result.sources[:5]:
-        lines.append(f"- [{s.title}]({s.url})")
+        lines.append(f"- [{s.source.title}]({s.source.url})")
+
+    if hasattr(result, 'recommended_deep_dives') and result.recommended_deep_dives:
+        lines.append("\n## Recommended Deep Dives\n")
+        for url in result.recommended_deep_dives[:5]:
+            lines.append(f"- {url}")
 
     return [TextContent(type="text", text="\n".join(lines))]
 
@@ -295,9 +312,11 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
     # Convert to PreGatheredSource
     sources = [
         PreGatheredSource(
-            title=s["title"],
+            origin=s.get("origin", "external"),
             url=s.get("url", ""),
+            title=s["title"],
             content=s["content"],
+            source_type=s.get("source_type", "article"),
         )
         for s in sources_data
     ]
@@ -308,12 +327,13 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
     style_map = {
         "comprehensive": SynthesisStyle.COMPREHENSIVE,
         "concise": SynthesisStyle.CONCISE,
-        "technical": SynthesisStyle.TECHNICAL,
-        "explanatory": SynthesisStyle.EXPLANATORY,
+        "comparative": SynthesisStyle.COMPARATIVE,
+        "academic": SynthesisStyle.ACADEMIC,
+        "tutorial": SynthesisStyle.TUTORIAL,
     }
     style = style_map.get(style_name, SynthesisStyle.COMPREHENSIVE)
 
-    result = await aggregator.synthesize_pregathered(
+    result = await aggregator.synthesize(
         query=query,
         sources=sources,
         style=style,
@@ -322,10 +342,10 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
     lines = [f"# Synthesis: {query}\n"]
     lines.append(result.content)
 
-    if result.attributions:
-        lines.append("\n## Attributions\n")
-        for a in result.attributions:
-            lines.append(f"- {a.source_title}: {a.claim}")
+    if result.citations:
+        lines.append("\n## Citations\n")
+        for c in result.citations:
+            lines.append(f"- [{c.get('number', '?')}] [{c.get('title', 'Unknown')}]({c.get('url', '')})")
 
     return [TextContent(type="text", text="\n".join(lines))]
 
