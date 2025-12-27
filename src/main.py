@@ -1,8 +1,9 @@
-"""FastAPI application entry point."""
+"""FastAPI application entry point with MCP server support."""
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_mcp import FastApiMCP
 from .api import router
 from .config import settings
 
@@ -14,6 +15,7 @@ async def lifespan(app: FastAPI):
     print(f"Research Tool starting on {settings.host}:{settings.port}")
     print(f"LLM API: {settings.llm_api_base}")
     print(f"SearXNG: {settings.searxng_host}")
+    print(f"MCP Server: http://{settings.host}:{settings.port}/mcp")
 
     yield
 
@@ -40,6 +42,26 @@ app.add_middleware(
 # Include API routes
 app.include_router(router, prefix="/api/v1", tags=["research"])
 
+# MCP Server - exposes all API endpoints as MCP tools
+# Uses Streamable HTTP transport (recommended, replaces deprecated SSE)
+mcp = FastApiMCP(
+    app,
+    name="Research Tool MCP",
+    description="Multi-source search and LLM synthesis research tool",
+    # Only expose research endpoints, not health/presets/focus-modes
+    include_operations=[
+        "search_api_v1_search_post",
+        "research_api_v1_research_post",
+        "ask_api_v1_ask_post",
+        "discover_api_v1_discover_post",
+        "synthesize_api_v1_synthesize_post",
+        "synthesize_enhanced_api_v1_synthesize_enhanced_post",
+        "synthesize_p1_api_v1_synthesize_p1_post",
+        "reason_api_v1_reason_post",
+    ],
+)
+mcp.mount_http()  # Mounts at /mcp by default
+
 
 # Root endpoint
 @app.get("/")
@@ -49,16 +71,17 @@ async def root():
         "name": "Research Tool",
         "version": "1.0.0",
         "docs": "/docs",
+        "mcp": "/mcp",
         "endpoints": {
             # Core endpoints
             "health": "/api/v1/health",
             "search": "/api/v1/search",
             "research": "/api/v1/research",
             # Perplexity-equivalent endpoints
-            "ask": "/api/v1/ask",           # mirrors perplexity_ask
-            "discover": "/api/v1/discover", # mirrors perplexity_search (EXPLORATORY)
-            "synthesize": "/api/v1/synthesize",  # mirrors perplexity_research (SYNTHESIS)
-            "reason": "/api/v1/reason",     # mirrors perplexity_reason
+            "ask": "/api/v1/ask",
+            "discover": "/api/v1/discover",
+            "synthesize": "/api/v1/synthesize",
+            "reason": "/api/v1/reason",
         },
     }
 
