@@ -1,8 +1,10 @@
 """FastAPI routes for research tool."""
 
+import hashlib
 import re
 from fastapi import APIRouter, HTTPException
 from ..llm_client import get_llm_client, OpenRouterClient
+from ..cache import cache
 from .schemas import (
     # Existing
     SearchRequest,
@@ -108,6 +110,13 @@ async def search(request: SearchRequest):
 
     Returns aggregated and ranked results from configured connectors.
     """
+    # Check cache
+    cache_extra = f"top_k={request.top_k}"
+    cached_result = cache.get(request.query, tier="search", extra=cache_extra)
+    if cached_result:
+        cached_result["_cached"] = True
+        return SearchResponse(**cached_result)
+
     aggregator = SearchAggregator()
 
     if not aggregator.connectors:
@@ -122,7 +131,7 @@ async def search(request: SearchRequest):
         connectors=request.connectors,
     )
 
-    return SearchResponse(
+    response = SearchResponse(
         query=request.query,
         sources=[
             SourceSchema(
@@ -138,6 +147,10 @@ async def search(request: SearchRequest):
         connectors_used=list(raw_results.keys()),
         total_results=len(sources),
     )
+
+    # Cache the response
+    cache.set(request.query, response.model_dump(), tier="search", extra=cache_extra)
+    return response
 
 
 @router.post("/research", response_model=ResearchResponse)
@@ -340,6 +353,12 @@ async def ask(request: AskRequest):
 
     Optimized for fast, concise responses.
     """
+    # Check cache
+    cached_result = cache.get(request.query, tier="ask")
+    if cached_result:
+        cached_result["_cached"] = True
+        return AskResponse(**cached_result)
+
     aggregator = SearchAggregator()
     engine = SynthesisEngine()
 
@@ -372,7 +391,7 @@ async def ask(request: AskRequest):
         reasoning_effort="low",
     )
 
-    return AskResponse(
+    response = AskResponse(
         query=request.query,
         content=result.get("content", ""),
         citations=[
@@ -392,6 +411,10 @@ async def ask(request: AskRequest):
         ],
         model=result.get("model"),
     )
+
+    # Cache the response
+    cache.set(request.query, response.model_dump(), tier="ask")
+    return response
 
 
 # =============================================================================
@@ -417,6 +440,15 @@ async def discover(request: DiscoverRequest | DiscoverRequestEnhanced):
 
     This sets the table for targeted research expansion.
     """
+    # Check cache - include focus_mode and identify_gaps in key
+    focus_mode = getattr(request, 'focus_mode', None)
+    identify_gaps = getattr(request, 'identify_gaps', True)
+    cache_extra = f"focus_mode={focus_mode}:identify_gaps={identify_gaps}"
+    cached_result = cache.get(request.query, tier="discover", extra=cache_extra)
+    if cached_result:
+        cached_result["_cached"] = True
+        return DiscoverResponse(**cached_result)
+
     aggregator = SearchAggregator()
     llm_client = _get_llm_client()
 
@@ -472,7 +504,7 @@ async def discover(request: DiscoverRequest | DiscoverRequestEnhanced):
         )
 
     # Convert to response schemas
-    return DiscoverResponse(
+    response = DiscoverResponse(
         query=result.query,
         landscape=KnowledgeLandscapeSchema(
             explicit_topics=result.landscape.explicit_topics,
@@ -509,6 +541,10 @@ async def discover(request: DiscoverRequest | DiscoverRequestEnhanced):
         connectors_used=aggregator.get_active_connectors(),
     )
 
+    # Cache the response
+    cache.set(request.query, response.model_dump(), tier="discover", extra=cache_extra)
+    return response
+
 
 @router.post("/synthesize", response_model=SynthesizeResponse)
 async def synthesize(request: SynthesizeRequest):
@@ -522,6 +558,15 @@ async def synthesize(request: SynthesizeRequest):
 
     This is the final step after Triple Stack research.
     """
+    # Source-aware caching: hash source URLs to prevent false cache hits
+    source_urls = sorted([s.url for s in request.sources])
+    source_hash = hashlib.sha256(":".join(source_urls).encode()).hexdigest()[:8]
+    cache_extra = f"style={request.style}:sources={source_hash}"
+    cached_result = cache.get(request.query, tier="synthesis", extra=cache_extra)
+    if cached_result:
+        cached_result["_cached"] = True
+        return SynthesizeResponse(**cached_result)
+
     llm_client = _get_llm_client()
     aggregator = SynthesisAggregator(
         llm_client=llm_client,
@@ -564,7 +609,7 @@ async def synthesize(request: SynthesizeRequest):
             detail=f"Synthesis error: {e}"
         )
 
-    return SynthesizeResponse(
+    response = SynthesizeResponse(
         query=request.query,
         content=result.content,
         citations=[
@@ -585,6 +630,10 @@ async def synthesize(request: SynthesizeRequest):
         model=settings.llm_model,
     )
 
+    # Cache the response
+    cache.set(request.query, response.model_dump(), tier="synthesis", extra=cache_extra)
+    return response
+
 
 @router.post("/reason", response_model=ReasonResponse)
 async def reason(request: ReasonRequest):
@@ -598,6 +647,16 @@ async def reason(request: ReasonRequest):
     4. Determine confident vs uncertain claims
     5. Synthesize with reasoning trace
     """
+    # Source-aware caching with reasoning_depth
+    source_urls = sorted([s.url for s in request.sources])
+    source_hash = hashlib.sha256(":".join(source_urls).encode()).hexdigest()[:8]
+    reasoning_depth = getattr(request, 'reasoning_depth', 'moderate')
+    cache_extra = f"reasoning_depth={reasoning_depth}:sources={source_hash}"
+    cached_result = cache.get(request.query, tier="reason", extra=cache_extra)
+    if cached_result:
+        cached_result["_cached"] = True
+        return ReasonResponse(**cached_result)
+
     llm_client = _get_llm_client()
     aggregator = SynthesisAggregator(
         llm_client=llm_client,
@@ -644,7 +703,7 @@ async def reason(request: ReasonRequest):
     # but we might want to expose reasoning in the future
     reasoning = None  # Reasoning trace not exposed in current implementation
 
-    return ReasonResponse(
+    response = ReasonResponse(
         query=request.query,
         content=result.content,
         reasoning=reasoning,
@@ -664,6 +723,10 @@ async def reason(request: ReasonRequest):
         word_count=result.word_count,
         model=settings.llm_model,
     )
+
+    # Cache the response
+    cache.set(request.query, response.model_dump(), tier="reason", extra=cache_extra)
+    return response
 
 
 # =============================================================================

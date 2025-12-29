@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 from ..connectors.base import Source
 from ..config import settings
 from ..llm_utils import get_llm_content
+from ..llm_client import OpenRouterClient, get_llm_client
 from .prompts import RESEARCH_SYSTEM_PROMPT, build_research_prompt, format_citations
 
 
@@ -19,6 +20,7 @@ class SynthesisEngine:
         temperature: float | None = None,
         top_p: float | None = None,
         max_tokens: int | None = None,
+        client: OpenRouterClient | None = None,
     ):
         """
         Initialize synthesis engine.
@@ -30,6 +32,7 @@ class SynthesisEngine:
             temperature: Generation temperature
             top_p: Top-p sampling parameter
             max_tokens: Maximum output tokens
+            client: Optional OpenRouterClient with fallback support
         """
         self.api_base = api_base or settings.llm_api_base
         self.api_key = api_key or settings.llm_api_key
@@ -38,10 +41,8 @@ class SynthesisEngine:
         self.top_p = top_p if top_p is not None else settings.llm_top_p
         self.max_tokens = max_tokens or settings.llm_max_tokens
 
-        self.client = AsyncOpenAI(
-            base_url=self.api_base,
-            api_key=self.api_key,
-        )
+        # Use provided client or create OpenRouterClient with fallback support
+        self.client = client or get_llm_client()
 
     async def synthesize(
         self,
@@ -102,11 +103,14 @@ class SynthesisEngine:
                     })
                     sources_used.append(source)
 
+            # Get actual model used (accounts for fallback)
+            actual_model = getattr(self.client, 'last_model_used', None) or self.model
+
             return {
                 "content": content,
                 "citations": citations,
                 "sources_used": sources_used,
-                "model": self.model,
+                "model": actual_model,
                 "usage": {
                     "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
                     "completion_tokens": response.usage.completion_tokens if response.usage else 0,

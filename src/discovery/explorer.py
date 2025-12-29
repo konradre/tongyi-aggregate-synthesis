@@ -285,10 +285,10 @@ class Explorer:
         # Adaptive connector routing (P0 Enhancement)
         connector_weights = None
         if self.router:
-            routing = self.router.route(query)
-            connector_weights = routing.connector_weights
-            # Log routing decision for debugging
-            # print(f"Query type: {routing.query_type}, Primary: {routing.primary_connector}")
+            routing = await self.router.route(query)
+            # Build weights from primary/secondary connectors
+            connector_weights = {c: 1.0 for c in routing.primary_connectors}
+            connector_weights.update({c: 0.5 for c in routing.secondary_connectors})
 
         # Run searches in parallel
         all_sources = []

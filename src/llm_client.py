@@ -5,10 +5,23 @@ Handles automatic fallback from free tier to paid model on rate limits.
 
 import logging
 from typing import Optional, List, Dict, Any
-from openai import AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI, RateLimitError, APIStatusError
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def is_rate_limit_error(error: Exception) -> bool:
+    """Check if exception is a rate limit error (including OpenRouter wrapped 429s)."""
+    if isinstance(error, RateLimitError):
+        return True
+    if isinstance(error, APIStatusError) and error.status_code == 429:
+        return True
+    # OpenRouter may wrap upstream rate limits
+    error_str = str(error).lower()
+    if "429" in error_str and ("rate" in error_str or "limit" in error_str):
+        return True
+    return False
 
 
 class OpenRouterClient:
@@ -92,9 +105,13 @@ class OpenRouterClient:
             logger.debug(f"Success with primary model: {current_model}")
             return response
 
-        except RateLimitError as e:
-            # Only fallback if enabled and we haven't already tried fallback
-            if self.fallback_enabled and current_model == self.primary_model and model is None:
+        except Exception as e:
+            # Check for rate limit errors (including OpenRouter wrapped 429s)
+            if not is_rate_limit_error(e):
+                raise  # Re-raise non-rate-limit errors
+
+            # Only fallback if enabled and using primary model (explicit or default)
+            if self.fallback_enabled and current_model == self.primary_model:
                 logger.warning(
                     f"Rate limited on {current_model}, falling back to {self.fallback_model}"
                 )
@@ -112,8 +129,9 @@ class OpenRouterClient:
                     logger.info(f"Fallback successful with: {self.fallback_model}")
                     return response
 
-                except RateLimitError:
-                    logger.error(f"Both primary and fallback models rate limited")
+                except Exception as fallback_e:
+                    if is_rate_limit_error(fallback_e):
+                        logger.error(f"Both primary and fallback models rate limited")
                     raise
             else:
                 # Re-raise if fallback disabled or already on fallback
