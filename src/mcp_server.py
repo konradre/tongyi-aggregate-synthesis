@@ -1,30 +1,23 @@
-"""Stdio MCP server for local inference.
+"""FastMCP server for local inference research tools.
 
 Exposes research tools via Model Context Protocol using stdio transport.
-Optimized for local 3090 inference - no network overhead.
+Refactored to use FastMCP for reliable stdio handling.
 
 Usage:
     python -m src.mcp_server
-
-Claude Desktop config:
-    {
-        "mcpServers": {
-            "research-tool": {
-                "command": "python",
-                "args": ["-m", "src.mcp_server"],
-                "cwd": "/path/to/research/tool"
-            }
-        }
-    }
 """
 
-import asyncio
 import hashlib
 import json
+import os
 from typing import Literal
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+
+# Suppress FastMCP logging before import to avoid polluting stdio transport
+os.environ["FASTMCP_LOG_LEVEL"] = "ERROR"
+
+from fastmcp import FastMCP
+import fastmcp
+fastmcp.settings.log_level = "ERROR"
 from openai import AsyncOpenAI
 
 from .config import settings
@@ -34,7 +27,6 @@ from .synthesis import (
     SynthesisAggregator,
     SynthesisStyle,
     PreGatheredSource,
-    # P0/P1 components
     SourceQualityGate,
     QualityDecision,
     ContradictionDetector,
@@ -44,7 +36,6 @@ from .synthesis import (
 )
 from .discovery import (
     Explorer,
-    # P1 focus modes
     FocusModeType,
     FocusModeSelector,
     get_focus_mode,
@@ -53,8 +44,8 @@ from .discovery import (
 from .cache import cache, cached
 
 
-# Initialize MCP server
-server = Server("research-tool")
+# Initialize FastMCP server
+mcp = FastMCP("deepresearch")
 
 
 def _get_llm_client() -> AsyncOpenAI:
@@ -65,220 +56,20 @@ def _get_llm_client() -> AsyncOpenAI:
     )
 
 
-@server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List available research tools."""
-    return [
-        Tool(
-            name="search",
-            description="""Multi-source search with RRF (Reciprocal Rank Fusion). Returns ranked results from SearXNG, Tavily, and LinkUp.
+@mcp.tool()
+async def search(query: str, top_k: int = 10) -> str:
+    """Multi-source search with RRF (Reciprocal Rank Fusion).
 
-Use this when you need raw search results without synthesis. Returns URLs, titles, snippets, and relevance scores.
-For research with synthesis, use 'research' instead. For pre-gathered sources, use 'synthesize'.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "top_k": {"type": "integer", "default": 10, "description": "Results per source (1-50)"},
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="research",
-            description="""Full research pipeline: search + LLM synthesis with citations. Standalone end-to-end tool.
+    Returns ranked results from SearXNG, Tavily, and LinkUp.
+    Use for raw search results without synthesis.
 
-Pipeline: Multi-source search → Source aggregation → LLM synthesis → Citation formatting
-
-Use this for quick research when you don't need fine control. For more control:
-- Use 'search' to get sources, then 'synthesize' with a preset
-- Use 'discover' for exploratory research with gap analysis""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Research query"},
-                    "top_k": {"type": "integer", "default": 10, "description": "Results per source"},
-                    "reasoning_effort": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "default": "medium",
-                        "description": "Depth of analysis: low (concise, fast), medium (balanced), high (academic, thorough)",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="ask",
-            description="""Quick conversational answer using local LLM. No search, direct response from model knowledge.
-
-Use for:
-- Simple factual questions the model likely knows
-- Clarification or follow-up on previous responses
-- When you already provided context and just need reasoning
-
-Do NOT use for current events, specific documentation, or anything requiring fresh data.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Question to answer"},
-                    "context": {"type": "string", "description": "Optional context to consider (prior conversation, relevant facts)"},
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="discover",
-            description="""Exploratory discovery with knowledge gap analysis. Identifies what's known and unknown about a topic.
-
-Each focus_mode configures:
-- Gap categories: What types of missing information to look for
-- Search expansion: Whether to broaden searches beyond the query
-- Priority engines: Which search backends to prioritize
-
-Use this for cold-start exploration when you don't know what you don't know.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Topic to explore"},
-                    "top_k": {"type": "integer", "default": 10, "description": "Results per source"},
-                    "identify_gaps": {"type": "boolean", "default": True, "description": "Analyze knowledge gaps"},
-                    "focus_mode": {
-                        "type": "string",
-                        "enum": ["general", "academic", "documentation", "comparison", "debugging", "tutorial", "news"],
-                        "default": "general",
-                        "description": """Domain-specific discovery mode. Each mode tailors gap analysis and search strategy:
-
-- general: Broad technical questions. Gaps: documentation, examples, alternatives, gotchas. Search expansion ON.
-- academic: Research papers, citations. Gaps: methodology, limitations, replications, critiques. Search expansion ON. Use for scientific topics.
-- documentation: Official docs, API refs. Gaps: api_reference, examples, migration, changelog, configuration. Search expansion OFF (stays focused). Use for library/framework questions.
-- comparison: X vs Y evaluations. Gaps: criteria, tradeoffs, edge_cases, benchmarks, community_preference. Search expansion ON. Use for "which should I use" questions.
-- debugging: Error investigation. Gaps: error_context, similar_issues, root_cause, workarounds, fixes. Search expansion ON. Use for error messages, stack traces.
-- tutorial: How-to guides. Gaps: prerequisites, step_by_step, common_mistakes, next_steps. Search expansion OFF. Use for learning/getting started.
-- news: Recent events. Gaps: announcement, reaction, impact, timeline. Search expansion ON, time-filtered to recent. Use for "latest" or "announced" queries.""",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="synthesize",
-            description="""Synthesize pre-gathered content into coherent analysis. Use when you already have sources from other tools.
-
-Pipeline components (controlled by preset):
-- Quality Gate (CRAG): Filter low-quality/irrelevant sources before synthesis
-- RCS: Query-focused summarization - summarize each source specifically for the question
-- Contradiction Detection: Find conflicting claims between sources
-- Outline-Guided Synthesis: Plan structure before writing (better coverage)
-
-Without preset: Direct synthesis, no preprocessing.
-With preset: Runs the configured pipeline components for that preset.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Synthesis focus/question"},
-                    "sources": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"},
-                                "url": {"type": "string"},
-                                "content": {"type": "string"},
-                                "origin": {"type": "string", "description": "Source origin (ref, exa, jina, external)"},
-                                "source_type": {"type": "string", "description": "Type (documentation, code, article)"},
-                            },
-                            "required": ["title", "content"],
-                        },
-                        "description": "Pre-gathered source documents",
-                    },
-                    "style": {
-                        "type": "string",
-                        "enum": ["comprehensive", "concise", "comparative", "academic", "tutorial"],
-                        "default": "comprehensive",
-                        "description": "Output format/length: comprehensive (full analysis with sections), concise (2-4 paragraphs), comparative (side-by-side for X vs Y), academic (formal with citations), tutorial (step-by-step guide)",
-                    },
-                    "preset": {
-                        "type": "string",
-                        "enum": ["comprehensive", "fast", "contracrow", "academic", "tutorial"],
-                        "description": """Processing pipeline preset. Each preset enables different components:
-
-- comprehensive: FULL PIPELINE. Quality gate → RCS summarization → Contradiction detection → Outline-guided synthesis. Best quality, slowest. Use for important research.
-- fast: MINIMAL. Direct synthesis only, no preprocessing. Fastest, use when sources are already high-quality and you need speed.
-- contracrow: CONTRADICTION-FOCUSED. Quality gate → Contradiction detection → Standard synthesis. Highlights conflicting claims. Use when sources may disagree (comparisons, controversial topics).
-- academic: SCHOLARLY. Quality gate → RCS → Outline-guided synthesis. Structured output with proper citations. Use for formal reports, documentation.
-- tutorial: STEP-BY-STEP. Quality gate → Outline-guided synthesis. Produces structured how-to format. Use for guides, tutorials, explanations.
-
-Omit preset for direct synthesis without preprocessing (equivalent to 'fast' but explicit).""",
-                    },
-                },
-                "required": ["query", "sources"],
-            },
-        ),
-        Tool(
-            name="reason",
-            description="""Deep reasoning with chain-of-thought analysis. For complex problems requiring step-by-step logical breakdown.
-
-Use this when you need:
-- Multi-step logical deduction (A implies B, B implies C, therefore...)
-- Trade-off analysis with explicit criteria weighting
-- Architectural decision reasoning
-- Root cause analysis for complex bugs
-- Evaluating multiple approaches systematically
-
-Do NOT use for simple questions - use 'ask' instead. Do NOT use for research - use 'discover' or 'synthesize'.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Problem or question requiring reasoning"},
-                    "context": {"type": "string", "description": "Background information, constraints, or gathered sources to reason over"},
-                    "reasoning_depth": {
-                        "type": "string",
-                        "enum": ["shallow", "moderate", "deep"],
-                        "default": "moderate",
-                        "description": """How thorough the reasoning chain should be:
-
-- shallow: Quick logical check, 2-3 reasoning steps. Use for simple deductions or sanity checks.
-- moderate: Standard analysis, 4-6 reasoning steps. Default for most decisions and trade-off analysis.
-- deep: Exhaustive chain-of-thought, 7+ steps with backtracking. Use for critical architectural decisions, complex debugging, or when stakes are high.""",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-    ]
-
-
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    """Execute a research tool."""
-
-    if name == "search":
-        return await _tool_search(arguments)
-    elif name == "research":
-        return await _tool_research(arguments)
-    elif name == "ask":
-        return await _tool_ask(arguments)
-    elif name == "discover":
-        return await _tool_discover(arguments)
-    elif name == "synthesize":
-        return await _tool_synthesize(arguments)
-    elif name == "reason":
-        return await _tool_reason(arguments)
-    else:
-        return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-
-@cached(tier="search", key_params=["top_k"])
-async def _tool_search(args: dict) -> list[TextContent]:
-    """Execute search tool."""
-    query = args["query"]
-    top_k = args.get("top_k", 10)
-
+    Args:
+        query: Search query
+        top_k: Results per source (1-50)
+    """
     aggregator = SearchAggregator()
     sources, raw_results = await aggregator.search(query=query, top_k=top_k)
 
-    # Format results
     lines = [f"# Search Results for: {query}\n"]
     for i, s in enumerate(sources, 1):
         lines.append(f"## [{i}] {s.title}")
@@ -287,53 +78,62 @@ async def _tool_search(args: dict) -> list[TextContent]:
         lines.append(f"\n{s.content[:500]}{'...' if len(s.content) > 500 else ''}\n")
 
     lines.append(f"\n---\n*{len(sources)} results from {list(raw_results.keys())}*")
+    return "\n".join(lines)
 
-    return [TextContent(type="text", text="\n".join(lines))]
 
+@mcp.tool()
+async def research(
+    query: str,
+    top_k: int = 10,
+    reasoning_effort: Literal["low", "medium", "high"] = "medium"
+) -> str:
+    """Full research pipeline: search + LLM synthesis with citations.
 
-@cached(tier="research", key_params=["reasoning_effort"])
-async def _tool_research(args: dict) -> list[TextContent]:
-    """Execute full research pipeline."""
-    query = args["query"]
-    top_k = args.get("top_k", 10)
-    reasoning_effort = args.get("reasoning_effort", "medium")
+    Pipeline: Multi-source search → Source aggregation → LLM synthesis → Citation formatting
 
-    # Search
+    Args:
+        query: Research query
+        top_k: Results per source
+        reasoning_effort: Depth of analysis (low=concise, medium=balanced, high=academic)
+    """
     aggregator = SearchAggregator()
     sources, _ = await aggregator.search(query=query, top_k=top_k)
 
     if not sources:
-        return [TextContent(type="text", text="No sources found for query.")]
+        return "No sources found for query."
 
-    # Synthesize
     client = _get_llm_client()
     engine = SynthesisEngine(client, model=settings.llm_model)
 
-    effort_map = {"low": SynthesisStyle.CONCISE, "medium": SynthesisStyle.COMPREHENSIVE, "high": SynthesisStyle.ACADEMIC}
+    effort_map = {
+        "low": SynthesisStyle.CONCISE,
+        "medium": SynthesisStyle.COMPREHENSIVE,
+        "high": SynthesisStyle.ACADEMIC
+    }
     style = effort_map.get(reasoning_effort, SynthesisStyle.COMPREHENSIVE)
 
-    result = await engine.synthesize(
-        query=query,
-        sources=sources,
-        style=style,
-    )
+    result = await engine.synthesize(query=query, sources=sources, style=style)
 
-    # Format with citations
     lines = [f"# Research: {query}\n"]
     lines.append(result.content)
     lines.append("\n## Citations\n")
     for c in result.citations:
         lines.append(f"- [{c.id}] [{c.title}]({c.url})")
 
-    return [TextContent(type="text", text="\n".join(lines))]
+    return "\n".join(lines)
 
 
-@cached(tier="ask")
-async def _tool_ask(args: dict) -> list[TextContent]:
-    """Quick conversational answer."""
-    query = args["query"]
-    context = args.get("context", "")
+@mcp.tool()
+async def ask(query: str, context: str = "") -> str:
+    """Quick conversational answer using local LLM.
 
+    No search, direct response from model knowledge.
+    Use for simple factual questions or follow-ups.
+
+    Args:
+        query: Question to answer
+        context: Optional context to consider
+    """
     client = _get_llm_client()
 
     messages = []
@@ -348,40 +148,40 @@ async def _tool_ask(args: dict) -> list[TextContent]:
         max_tokens=settings.llm_max_tokens,
     )
 
-    return [TextContent(type="text", text=response.choices[0].message.content)]
+    return response.choices[0].message.content
 
 
-@cached(tier="discover", key_params=["focus_mode", "identify_gaps"])
-async def _tool_discover(args: dict) -> list[TextContent]:
-    """Exploratory discovery with gap analysis and P1 focus modes."""
-    query = args["query"]
-    top_k = args.get("top_k", 10)
-    identify_gaps = args.get("identify_gaps", True)
-    focus_mode_name = args.get("focus_mode")
+@mcp.tool()
+async def discover(
+    query: str,
+    top_k: int = 10,
+    identify_gaps: bool = True,
+    focus_mode: Literal["general", "academic", "documentation", "comparison", "debugging", "tutorial", "news"] = "general"
+) -> str:
+    """Exploratory discovery with knowledge gap analysis.
 
+    Identifies what's known and unknown about a topic.
+    Use for cold-start exploration.
+
+    Args:
+        query: Topic to explore
+        top_k: Results per source
+        identify_gaps: Analyze knowledge gaps
+        focus_mode: Domain-specific discovery mode
+    """
     client = _get_llm_client()
     aggregator = SearchAggregator()
 
-    # P1: Focus mode selection
-    if focus_mode_name:
-        # Explicit focus mode
-        try:
-            focus_mode_type = FocusModeType(focus_mode_name.lower())
-        except ValueError:
-            focus_mode_type = FocusModeType.GENERAL
-        focus_mode = get_focus_mode(focus_mode_name)
-    else:
-        # Auto-detect focus mode from query
-        selector = FocusModeSelector(client, model=settings.llm_model)
-        focus_mode_type = await selector.select(query)
-        focus_mode = selector.get_mode_config(focus_mode_type)
+    try:
+        focus_mode_type = FocusModeType(focus_mode.lower())
+    except ValueError:
+        focus_mode_type = FocusModeType.GENERAL
 
-    # Get search params from focus mode
+    focus_config = get_focus_mode(focus_mode)
     search_params = get_search_params(focus_mode_type)
     expand_searches = search_params.get("expand_searches", True)
 
     explorer = Explorer(client, aggregator, model=settings.llm_model)
-
     result = await explorer.discover(
         query=query,
         top_k=top_k,
@@ -389,9 +189,8 @@ async def _tool_discover(args: dict) -> list[TextContent]:
         fill_gaps=identify_gaps,
     )
 
-    # Format output with focus mode info
     lines = [f"# Discovery: {query}\n"]
-    lines.append(f"*Focus Mode: {focus_mode.name}* - {focus_mode.description}\n")
+    lines.append(f"*Focus Mode: {focus_config.name}* - {focus_config.description}\n")
 
     lines.append("## Knowledge Landscape\n")
     if hasattr(result, 'landscape') and result.landscape:
@@ -406,11 +205,9 @@ async def _tool_discover(args: dict) -> list[TextContent]:
 
     if identify_gaps and hasattr(result, 'knowledge_gaps') and result.knowledge_gaps:
         lines.append("\n## Knowledge Gaps\n")
-        # Filter gaps by focus mode's gap_categories if available
-        gap_categories = focus_mode.gap_categories
+        gap_categories = focus_config.gap_categories
         for gap in result.knowledge_gaps:
             gap_type = getattr(gap, 'category', None) or gap.gap.lower()
-            # Show all gaps, but mark focus-relevant ones
             relevance = "🎯 " if any(cat in gap_type for cat in gap_categories) else ""
             lines.append(f"- {relevance}**{gap.gap}** ({gap.importance}): {gap.description}")
 
@@ -423,33 +220,42 @@ async def _tool_discover(args: dict) -> list[TextContent]:
         for url in result.recommended_deep_dives[:5]:
             lines.append(f"- {url}")
 
-    # Add focus mode metadata
     lines.append(f"\n---\n*Search expansion: {'enabled' if expand_searches else 'disabled'}*")
-    if focus_mode.gap_categories:
-        lines.append(f"*Gap focus: {', '.join(focus_mode.gap_categories)}*")
+    if focus_config.gap_categories:
+        lines.append(f"*Gap focus: {', '.join(focus_config.gap_categories)}*")
 
-    return [TextContent(type="text", text="\n".join(lines))]
+    return "\n".join(lines)
 
 
-async def _tool_synthesize(args: dict) -> list[TextContent]:
-    """Synthesize pre-gathered content with optional P1 pipeline."""
-    query = args["query"]
-    sources_data = args["sources"]
-    style_name = args.get("style", "comprehensive")
-    preset_name = args.get("preset")
+@mcp.tool()
+async def synthesize(
+    query: str,
+    sources: list[dict],
+    style: Literal["comprehensive", "concise", "comparative", "academic", "tutorial"] = "comprehensive",
+    preset: Literal["comprehensive", "fast", "contracrow", "academic", "tutorial"] | None = None
+) -> str:
+    """Synthesize pre-gathered content into coherent analysis.
 
-    # Source-aware cache key (hash sources content)
+    Use when you already have sources from other tools.
+
+    Args:
+        query: Synthesis focus/question
+        sources: Pre-gathered source documents with title, content, url, origin, source_type
+        style: Output format/length
+        preset: Processing pipeline preset (comprehensive, fast, contracrow, academic, tutorial)
+    """
+    # Source-aware cache key
     sources_hash = hashlib.md5(
-        json.dumps(sorted([s.get("url", s.get("title", "")) for s in sources_data])).encode()
+        json.dumps(sorted([s.get("url", s.get("title", "")) for s in sources])).encode()
     ).hexdigest()[:8]
-    cache_extra = f"preset={preset_name}:style={style_name}:src={sources_hash}"
+    cache_extra = f"preset={preset}:style={style}:src={sources_hash}"
 
     cached_result = cache.get(query, tier="synthesis", extra=cache_extra)
     if cached_result is not None:
-        return [TextContent(type="text", text=f"*[cached]*\n\n{cached_result}")]
+        return f"*[cached]*\n\n{cached_result}"
 
     # Convert to PreGatheredSource
-    sources = [
+    pre_sources = [
         PreGatheredSource(
             origin=s.get("origin", "external"),
             url=s.get("url", ""),
@@ -457,7 +263,7 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
             content=s["content"],
             source_type=s.get("source_type", "article"),
         )
-        for s in sources_data
+        for s in sources
     ]
 
     client = _get_llm_client()
@@ -469,47 +275,32 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
         "academic": SynthesisStyle.ACADEMIC,
         "tutorial": SynthesisStyle.TUTORIAL,
     }
-    style = style_map.get(style_name, SynthesisStyle.COMPREHENSIVE)
+    synth_style = style_map.get(style, SynthesisStyle.COMPREHENSIVE)
 
-    # P1 pipeline when preset specified
-    if preset_name:
-        preset = get_preset(preset_name)
-        metadata = {"preset": preset.name}
-        processed_sources = sources
+    if preset:
+        preset_config = get_preset(preset)
+        metadata = {"preset": preset_config.name}
+        processed_sources = pre_sources
 
-        # P0: Quality gate (CRAG-style filtering)
-        if preset.run_quality_gate:
+        # Quality gate
+        if preset_config.run_quality_gate:
             quality_gate = SourceQualityGate(client, model=settings.llm_model)
-            gate_result = await quality_gate.evaluate(
-                query=query,
-                sources=sources,  # Pass PreGatheredSource objects directly
-            )
-            # Keep only good sources that passed quality gate
+            gate_result = await quality_gate.evaluate(query=query, sources=pre_sources)
             if gate_result.decision in (QualityDecision.PARTIAL, QualityDecision.PROCEED):
-                processed_sources = gate_result.good_sources if gate_result.good_sources else sources
-            else:
-                # REJECT - still use original sources but note the warning
-                processed_sources = sources
+                processed_sources = gate_result.good_sources if gate_result.good_sources else pre_sources
             metadata["quality_gate"] = {
                 "passed": len(gate_result.good_sources),
                 "filtered": len(gate_result.rejected_sources),
                 "avg_quality": gate_result.avg_quality,
             }
 
-        # P1: RCS preprocessing (query-focused summarization)
-        if preset.use_rcs and processed_sources:
+        # RCS preprocessing
+        if preset_config.use_rcs and processed_sources:
             rcs = RCSPreprocessor(client, model=settings.llm_model)
-            rcs_result = await rcs.prepare(
-                query=query,
-                sources=processed_sources,  # Pass PreGatheredSource objects directly
-                top_k=min(len(processed_sources), 5),
-            )
-            # Replace sources with RCS-processed summaries
+            rcs_result = await rcs.prepare(query=query, sources=processed_sources, top_k=min(len(processed_sources), 5))
             if rcs_result.summaries:
-                # Create new sources with focused content from RCS summaries
                 rcs_processed = []
                 for ctx_summary in rcs_result.summaries:
-                    # Use the contextual summary as the new content
                     new_source = PreGatheredSource(
                         origin=ctx_summary.source.origin,
                         url=ctx_summary.source.url,
@@ -522,36 +313,23 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
             metadata["rcs_applied"] = True
             metadata["rcs_kept"] = len(rcs_result.summaries)
 
-        # P0: Contradiction detection (PaperQA2-style)
+        # Contradiction detection
         contradictions = []
-        if preset.detect_contradictions and processed_sources:
+        if preset_config.detect_contradictions and processed_sources:
             detector = ContradictionDetector(client, model=settings.llm_model)
-            contradictions = await detector.detect(
-                query=query,
-                sources=processed_sources,  # Pass PreGatheredSource objects directly
-            )
+            contradictions = await detector.detect(query=query, sources=processed_sources)
             metadata["contradictions_found"] = len(contradictions)
 
-        # P1: Outline-guided synthesis (SciRAG-style)
-        if preset.use_outline:
+        # Synthesis
+        if preset_config.use_outline:
             outline_synth = OutlineGuidedSynthesizer(client, model=settings.llm_model)
-            result = await outline_synth.synthesize(
-                query=query,
-                sources=processed_sources,  # Pass PreGatheredSource objects directly
-                style=style,
-            )
+            result = await outline_synth.synthesize(query=query, sources=processed_sources, style=synth_style)
         else:
-            # Standard synthesis
             aggregator = SynthesisAggregator(client, model=settings.llm_model)
-            result = await aggregator.synthesize(
-                query=query,
-                sources=processed_sources,
-                style=style,
-            )
+            result = await aggregator.synthesize(query=query, sources=processed_sources, style=synth_style)
 
-        # Format output with P1 metadata
         lines = [f"# Synthesis: {query}\n"]
-        lines.append(f"*Preset: {preset.name}*\n")
+        lines.append(f"*Preset: {preset_config.name}*\n")
         lines.append(result.content)
 
         if contradictions:
@@ -575,18 +353,13 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
         if metadata.get("rcs_applied"):
             lines.append(f"*RCS: {metadata.get('rcs_kept', 0)} sources processed*")
 
-        # Cache result
         output = "\n".join(lines)
         cache.set(query, output, tier="synthesis", extra=cache_extra)
-        return [TextContent(type="text", text=output)]
+        return output
 
     # Standard synthesis (no preset)
     aggregator = SynthesisAggregator(client, model=settings.llm_model)
-    result = await aggregator.synthesize(
-        query=query,
-        sources=sources,
-        style=style,
-    )
+    result = await aggregator.synthesize(query=query, sources=pre_sources, style=synth_style)
 
     lines = [f"# Synthesis: {query}\n"]
     lines.append(result.content)
@@ -596,19 +369,26 @@ async def _tool_synthesize(args: dict) -> list[TextContent]:
         for c in result.citations:
             lines.append(f"- [{c.get('number', '?')}] [{c.get('title', 'Unknown')}]({c.get('url', '')})")
 
-    # Cache result
     output = "\n".join(lines)
     cache.set(query, output, tier="synthesis", extra=cache_extra)
-    return [TextContent(type="text", text=output)]
+    return output
 
 
-@cached(tier="reason", key_params=["reasoning_depth"])
-async def _tool_reason(args: dict) -> list[TextContent]:
-    """Deep reasoning with chain-of-thought."""
-    query = args["query"]
-    context = args.get("context", "")
-    depth = args.get("reasoning_depth", "moderate")
+@mcp.tool()
+async def reason(
+    query: str,
+    context: str = "",
+    reasoning_depth: Literal["shallow", "moderate", "deep"] = "moderate"
+) -> str:
+    """Deep reasoning with chain-of-thought analysis.
 
+    For complex problems requiring step-by-step logical breakdown.
+
+    Args:
+        query: Problem or question requiring reasoning
+        context: Background information or constraints
+        reasoning_depth: How thorough (shallow=2-3 steps, moderate=4-6, deep=7+)
+    """
     client = _get_llm_client()
 
     depth_prompts = {
@@ -617,7 +397,7 @@ async def _tool_reason(args: dict) -> list[TextContent]:
         "deep": "Analyze this comprehensively. Consider multiple perspectives, potential counterarguments, edge cases, and implications. Show detailed chain-of-thought reasoning.",
     }
 
-    system_prompt = f"""You are a reasoning assistant. {depth_prompts.get(depth, depth_prompts['moderate'])}
+    system_prompt = f"""You are a reasoning assistant. {depth_prompts.get(reasoning_depth, depth_prompts['moderate'])}
 
 Structure your response with clear sections for:
 1. Understanding the problem
@@ -633,22 +413,12 @@ Structure your response with clear sections for:
     response = await client.chat.completions.create(
         model=settings.llm_model,
         messages=messages,
-        temperature=0.7,  # Slightly lower for reasoning
+        temperature=0.7,
         max_tokens=settings.llm_max_tokens,
     )
 
-    return [TextContent(type="text", text=response.choices[0].message.content)]
-
-
-async def main():
-    """Run the MCP server with stdio transport."""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+    return response.choices[0].message.content
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    mcp.run(show_banner=False)

@@ -2,6 +2,8 @@
 
 A research-backed hybrid research tool combining multi-source web search with LLM-powered synthesis. Self-hosted replacement for Perplexity API using local Tongyi DeepResearch 30B model.
 
+Available as both a **FastAPI REST service** and an **MCP server** for Claude Code integration.
+
 ## Features
 
 ### Core
@@ -27,6 +29,7 @@ A research-backed hybrid research tool combining multi-source web search with LL
 ### Compatibility
 - **Reasoning Model Support**: Works with DeepSeek-R1, Tongyi-DeepResearch, Qwen-QwQ
 - **Docker-Ready**: Single container deployment
+- **MCP Server**: FastMCP-based stdio transport for Claude Code integration
 
 ## Quick Start
 
@@ -56,6 +59,49 @@ curl http://localhost:8000/api/v1/health
 | `/api/v1/ask` | POST | Quick answers (low reasoning effort) |
 | `/api/v1/presets` | GET | List available synthesis presets |
 | `/api/v1/focus-modes` | GET | List available focus modes |
+
+## MCP Server (Claude Code Integration)
+
+The tool exposes an MCP server using FastMCP for direct integration with Claude Code.
+
+### Installation
+
+Add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "gigaxity-mcp": {
+      "type": "stdio",
+      "command": "/path/to/python",
+      "args": ["/path/to/research/tool/run_mcp.py"],
+      "env": {
+        "RESEARCH_LLM_API_BASE": "http://localhost:8080/v1",
+        "RESEARCH_LLM_MODEL": "tongyi-deepresearch-30b",
+        "RESEARCH_SEARXNG_HOST": "http://localhost:8888"
+      }
+    }
+  }
+}
+```
+
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `search` | Multi-source search with RRF fusion (no LLM) |
+| `research` | Full research pipeline with LLM synthesis |
+| `ask` | Quick conversational answers |
+| `discover` | Exploratory discovery with knowledge gap analysis |
+| `synthesize` | Synthesize pre-gathered content into analysis |
+| `reason` | Deep reasoning with chain-of-thought |
+
+### Running Standalone
+
+```bash
+# Test MCP server
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | python run_mcp.py
+```
 
 ## Example Usage
 
@@ -169,7 +215,8 @@ This tool implements techniques from recent research:
 
 ## Requirements
 
-- Docker & Docker Compose
+- Docker & Docker Compose (for REST API)
+- Python 3.10+ with FastMCP (for MCP server)
 - SearXNG instance (or Tavily/LinkUp API keys)
 - OpenAI-compatible LLM API (llama.cpp recommended)
 
