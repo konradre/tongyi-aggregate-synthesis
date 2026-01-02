@@ -4,6 +4,8 @@
 
 Tongyi Aggregate Synthesis is a modular research tool combining multi-source web search with LLM-powered synthesis. It implements research-backed techniques for query understanding, source quality assessment, and citation-aware generation.
 
+Available as both a **FastAPI REST service** and an **MCP server** (via FastMCP) for Claude Code integration.
+
 ## System Architecture
 
 ```
@@ -111,6 +113,46 @@ Tongyi Aggregate Synthesis is a modular research tool combining multi-source web
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## MCP Server (`src/mcp_server.py`)
+
+The tool also exposes an MCP (Model Context Protocol) server using FastMCP for direct integration with Claude Code.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         FastMCP Server (stdio)                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   MCP Tools                                                                  │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│   │ search   │  │ research │  │   ask    │  │ discover │  │synthesize│    │
+│   └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
+│        │             │             │             │             │            │
+│        └─────────────┴─────────────┴─────────────┴─────────────┘            │
+│                              │                                               │
+│                      Shared Components                                       │
+│                (SearchAggregator, SynthesisEngine, etc.)                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**MCP Tools:**
+
+| Tool | Description | Equivalent API |
+|------|-------------|----------------|
+| `search` | Multi-source search with RRF fusion | `/api/v1/search` |
+| `research` | Full research pipeline with citations | `/api/v1/research` |
+| `ask` | Quick conversational answers | `/api/v1/ask` |
+| `discover` | Exploratory discovery with gap analysis | `/api/v1/discover` |
+| `synthesize` | Synthesize pre-gathered content | `/api/v1/synthesize` |
+| `reason` | Deep chain-of-thought reasoning | `/api/v1/reason` |
+
+**Key Design Decisions:**
+
+1. **FastMCP over manual implementation**: Uses FastMCP for reliable stdio transport and protocol handling
+2. **Shared core components**: MCP tools reuse the same `SearchAggregator`, `SynthesisEngine`, etc. as the REST API
+3. **Logging suppression**: Uses `FASTMCP_LOG_LEVEL=ERROR` to ensure clean stdio transport
+4. **Standalone runner**: `run_mcp.py` provides clean module path resolution
 
 ## Module Reference
 

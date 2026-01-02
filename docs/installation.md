@@ -62,7 +62,9 @@ Expected response:
 }
 ```
 
-## Local Development
+## MCP Server Installation (Claude Code)
+
+The tool includes a FastMCP-based MCP server for direct integration with Claude Code.
 
 ### 1. Install Dependencies
 
@@ -74,20 +76,64 @@ uv pip install -e .
 pip install -e .
 ```
 
-### 2. Set Environment Variables
+### 2. Configure Claude Code
+
+Add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "gigaxity-mcp": {
+      "type": "stdio",
+      "command": "/path/to/python",
+      "args": ["/path/to/research/tool/run_mcp.py"],
+      "env": {
+        "RESEARCH_LLM_API_BASE": "http://192.168.1.119:8080/v1",
+        "RESEARCH_LLM_MODEL": "tongyi-deepresearch-30b",
+        "RESEARCH_SEARXNG_HOST": "http://192.168.1.3:8888"
+      }
+    }
+  }
+}
+```
+
+### 3. Test MCP Server
+
+```bash
+# Test JSON-RPC handshake
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | python run_mcp.py
+```
+
+### 4. Restart Claude Code
+
+After updating `~/.claude.json`, restart Claude Code to load the new MCP server.
+
+## Local Development (REST API)
+
+Dependencies should already be installed from the MCP section above. If not:
+
+```bash
+# Using uv (recommended)
+uv pip install -e .
+
+# Or using pip
+pip install -e .
+```
+
+### 1. Set Environment Variables
 
 ```bash
 export RESEARCH_SEARXNG_HOST="http://localhost:8888"
 export RESEARCH_LLM_API_BASE="http://localhost:8080/v1"
 ```
 
-### 3. Run Development Server
+### 2. Run Development Server
 
 ```bash
 python -m uvicorn src.main:app --reload --port 8000
 ```
 
-### 4. Run Tests
+### 3. Run Tests
 
 ```bash
 python scripts/test_local.py

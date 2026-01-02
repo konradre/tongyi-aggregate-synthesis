@@ -163,6 +163,154 @@ curl -X POST http://localhost:8000/api/v1/ask \
 
 ---
 
+### POST /api/v1/discover
+
+Exploratory discovery with knowledge gap analysis. Optimized for the EXPLORATORY workflow.
+
+**Request Body**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Topic to explore |
+| `top_k` | integer | No | 10 | Results per source (1-50) |
+| `identify_gaps` | boolean | No | true | Analyze knowledge gaps |
+| `focus_mode` | string | No | "general" | Domain-specific discovery mode |
+
+**Example Request**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/discover \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "transformer architecture in NLP",
+    "identify_gaps": true,
+    "focus_mode": "academic"
+  }'
+```
+
+**Response**
+
+```json
+{
+  "query": "transformer architecture in NLP",
+  "landscape": {
+    "explicit_topics": ["self-attention", "encoder-decoder"],
+    "implicit_topics": ["positional encoding"],
+    "related_concepts": ["BERT", "GPT"],
+    "contrasting_views": []
+  },
+  "knowledge_gaps": [
+    {"gap": "efficiency", "description": "How to reduce quadratic attention complexity", "importance": "high"}
+  ],
+  "sources": [...],
+  "synthesis_preview": "Transformers revolutionized NLP by...",
+  "recommended_deep_dives": ["https://arxiv.org/abs/1706.03762"]
+}
+```
+
+---
+
+### POST /api/v1/synthesize
+
+Synthesize pre-gathered content into coherent analysis. Use when you already have sources from other tools.
+
+**Request Body**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Synthesis focus/question |
+| `sources` | PreGatheredSource[] | Yes | - | Pre-gathered sources |
+| `style` | string | No | "comprehensive" | Output format |
+| `max_tokens` | integer | No | 3000 | Maximum output tokens |
+
+**PreGatheredSource Schema**
+
+```json
+{
+  "origin": "ref",
+  "url": "https://example.com/article",
+  "title": "Article Title",
+  "content": "Full content already fetched...",
+  "source_type": "article"
+}
+```
+
+**Example Request**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Compare RAG vs fine-tuning",
+    "sources": [
+      {"origin": "jina", "url": "https://...", "title": "RAG Guide", "content": "..."},
+      {"origin": "exa", "url": "https://...", "title": "Fine-tuning Tutorial", "content": "..."}
+    ],
+    "style": "comparative"
+  }'
+```
+
+---
+
+### POST /api/v1/reason
+
+Advanced reasoning with chain-of-thought analysis.
+
+**Request Body**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Research query |
+| `sources` | PreGatheredSource[] | Yes | - | Pre-gathered sources |
+| `style` | string | No | "comprehensive" | Output format |
+
+**Example Request**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/reason \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Why is attention better than RNNs for long sequences?",
+    "sources": [...],
+    "style": "academic"
+  }'
+```
+
+---
+
+### POST /api/v1/synthesize/enhanced
+
+Enhanced synthesis with P0 reliability features (quality gate, contradiction detection, citation verification).
+
+**Request Body**
+
+Same as `/api/v1/synthesize` plus:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `run_quality_gate` | boolean | No | true | Evaluate source quality first |
+| `detect_contradictions` | boolean | No | true | Surface source contradictions |
+| `verify_citations` | boolean | No | false | NLI verify citations (slower) |
+
+---
+
+### POST /api/v1/synthesize/p1
+
+P1 enhanced synthesis with presets, outline-guided synthesis, and RCS.
+
+**Request Body**
+
+Same as `/api/v1/synthesize/enhanced` plus:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `preset` | string | No | null | Use preset configuration |
+| `use_outline` | boolean | No | false | Use SciRAG outline-guided synthesis |
+| `use_rcs` | boolean | No | false | Use PaperQA2-style contextual summarization |
+| `rcs_top_k` | integer | No | 5 | Top sources to keep after RCS ranking |
+
+---
+
 ### GET /api/v1/presets
 
 List available synthesis presets.

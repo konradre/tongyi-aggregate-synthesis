@@ -189,77 +189,45 @@ agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS)
 result = agent.run("Research the latest developments in quantum computing")
 ```
 
-## MCP Server Wrapper
+## MCP Server (Claude Code Integration)
 
-Create an MCP server to expose the research tool:
+The tool includes a built-in MCP server using FastMCP. Configure it in `~/.claude.json`:
 
-```python
-# mcp_server.py
-import asyncio
-from mcp.server import Server
-from mcp.types import Tool, TextContent
-import httpx
+```json
+{
+  "mcpServers": {
+    "gigaxity-mcp": {
+      "type": "stdio",
+      "command": "/path/to/python",
+      "args": ["/path/to/research/tool/run_mcp.py"],
+      "env": {
+        "RESEARCH_LLM_API_BASE": "http://192.168.1.119:8080/v1",
+        "RESEARCH_LLM_MODEL": "tongyi-deepresearch-30b",
+        "RESEARCH_SEARXNG_HOST": "http://192.168.1.3:8888"
+      }
+    }
+  }
+}
+```
 
-server = Server("research-tool")
+### Available MCP Tools
 
-@server.list_tools()
-async def list_tools():
-    return [
-        Tool(
-            name="research",
-            description="Research a topic with multi-source search and synthesis",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Research query"},
-                    "reasoning_effort": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "default": "medium"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="search",
-            description="Multi-source web search without synthesis",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "top_k": {"type": "integer", "default": 10}
-                },
-                "required": ["query"]
-            }
-        )
-    ]
+Once configured, the following tools are available in Claude Code:
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict):
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        if name == "research":
-            response = await client.post(
-                "http://localhost:8000/api/v1/research",
-                json=arguments
-            )
-            result = response.json()
-            return [TextContent(type="text", text=result["content"])]
+| Tool | Description |
+|------|-------------|
+| `search` | Multi-source search with RRF fusion |
+| `research` | Full research pipeline with citations |
+| `ask` | Quick conversational answers |
+| `discover` | Exploratory discovery with gap analysis |
+| `synthesize` | Synthesize pre-gathered content |
+| `reason` | Deep chain-of-thought reasoning |
 
-        elif name == "search":
-            response = await client.post(
-                "http://localhost:8000/api/v1/search",
-                json=arguments
-            )
-            result = response.json()
-            sources_text = "\n".join([
-                f"[{s['id']}] {s['title']}\n{s['url']}\n{s['content'][:200]}..."
-                for s in result["sources"]
-            ])
-            return [TextContent(type="text", text=sources_text)]
+### Test MCP Server Standalone
 
-if __name__ == "__main__":
-    asyncio.run(server.run())
+```bash
+# Test JSON-RPC handshake
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | python run_mcp.py
 ```
 
 ## Batch Research
