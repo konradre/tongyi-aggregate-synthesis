@@ -91,15 +91,12 @@ class TestPresetsEndpoint:
         assert "presets" in data
         presets = data["presets"]
 
-        # Should have at least 5 presets
-        assert len(presets) >= 5
+        # OpenRouter-optimized: only 2 presets (fast, tutorial)
+        assert len(presets) == 2
 
         # Check preset structure
         preset_values = [p["value"] for p in presets]
-        assert "comprehensive" in preset_values
         assert "fast" in preset_values
-        assert "contracrow" in preset_values
-        assert "academic" in preset_values
         assert "tutorial" in preset_values
 
     @pytest.mark.unit
@@ -418,7 +415,7 @@ class TestSynthesizeP1Endpoint:
             "use_outline": False,
             "use_rcs": True,
             "rcs_top_k": 2,
-            "style": "comprehensive"
+            "style": "concise"
         })
 
         assert response.status_code == 200
@@ -430,13 +427,13 @@ class TestSynthesizeP1Endpoint:
     @pytest.mark.integration
     @pytest.mark.slow
     @pytest.mark.p1
-    def test_p1_comprehensive_preset(self, test_client, llm_configured):
-        """P1 synthesis with comprehensive preset (all features)."""
+    def test_p1_tutorial_preset(self, test_client, llm_configured):
+        """P1 synthesis with tutorial preset (outline-guided)."""
         if not llm_configured:
             pytest.skip("LLM not configured")
 
         response = test_client.post("/api/v1/synthesize/p1", json={
-            "query": "Compare modern Python web frameworks",
+            "query": "How to build APIs with modern Python frameworks",
             "sources": [
                 {
                     "origin": "ref",
@@ -453,14 +450,12 @@ class TestSynthesizeP1Endpoint:
                     "source_type": "documentation"
                 }
             ],
-            "preset": "comprehensive"
+            "preset": "tutorial"
         })
 
         assert response.status_code == 200
         data = response.json()
-        assert data["preset_used"] == "Comprehensive"
-        # Comprehensive should include quality gate
-        assert "quality_gate" in data
+        assert data["preset_used"] == "Tutorial"
 
 
 # =============================================================================

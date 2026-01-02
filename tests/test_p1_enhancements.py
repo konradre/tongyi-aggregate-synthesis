@@ -432,31 +432,35 @@ class TestSynthesisPresets:
     @pytest.mark.unit
     @pytest.mark.p1
     def test_get_preset_by_name(self):
-        """get_preset returns correct preset."""
-        preset = get_preset("comprehensive")
-        assert preset.name == "Comprehensive"
-        assert preset.use_outline is True
-        assert preset.use_rcs is True
-
+        """get_preset returns correct preset (OpenRouter-optimized)."""
         preset = get_preset("fast")
         assert preset.name == "Fast"
         assert preset.use_outline is False
         assert preset.use_rcs is False
 
+        preset = get_preset("tutorial")
+        assert preset.name == "Tutorial"
+        assert preset.use_outline is True
+        assert preset.use_rcs is False
+
     @pytest.mark.unit
     @pytest.mark.p1
     def test_get_preset_invalid(self):
-        """Invalid preset name returns comprehensive preset."""
+        """Invalid/legacy preset name returns fast preset (OpenRouter fallback)."""
         preset = get_preset("nonexistent")
-        assert preset.name == "Comprehensive"
+        assert preset.name == "Fast"
+        # Legacy presets also fall back to fast
+        preset = get_preset("comprehensive")
+        assert preset.name == "Fast"
 
     @pytest.mark.unit
     @pytest.mark.p1
     def test_list_presets(self):
-        """list_presets returns all presets with metadata."""
+        """list_presets returns OpenRouter-optimized presets."""
         presets = list_presets()
 
-        assert len(presets) >= 5
+        # OpenRouter version has only 2 presets
+        assert len(presets) == 2
         for p in presets:
             assert "name" in p
             assert "value" in p
@@ -466,22 +470,11 @@ class TestSynthesisPresets:
 
     @pytest.mark.unit
     @pytest.mark.p1
-    def test_contracrow_preset(self):
-        """Contracrow preset optimized for contradictions."""
-        preset = get_preset("contracrow")
-        assert preset.detect_contradictions is True
-        assert preset.run_quality_gate is True
-        assert preset.style == SynthesisStyle.COMPARATIVE
-
-    @pytest.mark.unit
-    @pytest.mark.p1
-    def test_academic_preset(self):
-        """Academic preset has scholarly settings."""
-        preset = get_preset("academic")
-        assert preset.verify_citations is True
-        assert preset.use_outline is True
-        assert preset.style == SynthesisStyle.ACADEMIC
-        assert preset.min_sources >= 2
+    def test_legacy_presets_fallback(self):
+        """Legacy preset names (comprehensive, contracrow, academic) fall back to fast."""
+        for legacy_name in ["comprehensive", "contracrow", "academic"]:
+            preset = get_preset(legacy_name)
+            assert preset.name == "Fast", f"{legacy_name} should fall back to Fast"
 
     @pytest.mark.unit
     @pytest.mark.p1
@@ -510,7 +503,7 @@ class TestPresetOverrides:
     @pytest.mark.p1
     def test_apply_single_override(self):
         """Single override applies correctly."""
-        base = get_preset("comprehensive")
+        base = get_preset("tutorial")  # Use tutorial (has use_outline=True)
         overrides = PresetOverrides(max_tokens=8000)
 
         custom = apply_overrides(base, overrides)
@@ -541,7 +534,7 @@ class TestPresetOverrides:
     @pytest.mark.p1
     def test_override_preserves_base(self):
         """Overrides don't modify base preset."""
-        base = get_preset("comprehensive")
+        base = get_preset("fast")
         original_tokens = base.max_tokens
 
         overrides = PresetOverrides(max_tokens=10000)

@@ -1,6 +1,6 @@
 # Tongyi Aggregate Synthesis
 
-A research-backed hybrid research tool combining multi-source web search with LLM-powered synthesis. Self-hosted replacement for Perplexity API using local Tongyi DeepResearch 30B model.
+A research-backed hybrid research tool combining multi-source web search with LLM-powered synthesis. Uses OpenRouter for Tongyi DeepResearch 30B with automatic free-to-paid tier fallback.
 
 ## Features
 
@@ -8,7 +8,7 @@ A research-backed hybrid research tool combining multi-source web search with LL
 - **Multi-Source Search**: Parallel queries across SearXNG, Tavily, and LinkUp
 - **RRF Fusion**: Reciprocal Rank Fusion combines and re-ranks results
 - **Citation-Aware Synthesis**: LLM generates answers with inline citations
-- **OpenAI-Compatible**: Works with any OpenAI-compatible API (llama.cpp, vLLM, etc.)
+- **OpenRouter Integration**: Free tier with auto-fallback to paid on 429 rate limits
 
 ### Discovery Module (Research-Backed)
 - **Adaptive Routing**: Query classification routes to optimal connectors
@@ -26,6 +26,7 @@ A research-backed hybrid research tool combining multi-source web search with LL
 
 ### Compatibility
 - **Reasoning Model Support**: Works with DeepSeek-R1, Tongyi-DeepResearch, Qwen-QwQ
+- **OpenRouter Support**: Automatic fallback from free to paid tier on rate limits
 - **Docker-Ready**: Single container deployment
 
 ## Quick Start
@@ -36,8 +37,9 @@ git clone https://github.com/konradre/tongyi-aggregate-synthesis.git
 cd tongyi-aggregate-synthesis
 
 # Configure
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 cp .env.example .env
-# Edit .env with your API keys and LLM endpoint
+# Edit .env with your SearXNG host and optional Tavily/LinkUp keys
 
 # Run
 docker compose up -d
@@ -75,23 +77,20 @@ curl -X POST http://localhost:8000/api/v1/research \
   -H "Content-Type: application/json" \
   -d '{"query": "FastAPI authentication", "focus_mode": "documentation"}'
 
-# With preset (enables quality gate, RCS, contradiction detection)
+# With tutorial preset (outline-guided step-by-step format)
 curl -X POST http://localhost:8000/api/v1/research \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is RAG?", "preset": "comprehensive"}'
+  -d '{"query": "How to implement RAG?", "preset": "tutorial"}'
 ```
 
-### Presets
+### Presets (OpenRouter-Optimized)
 
 | Preset | Latency | Use Case |
 |--------|---------|----------|
-| `fast` | ~4-5s | Quick answers without verification |
-| `comprehensive` | ~45-55s | Full research with quality checks |
-| `contracrow` | ~45-55s | Focus on finding contradictions |
-| `academic` | ~40-50s | Scholarly style with outline |
-| `tutorial` | ~40-50s | Step-by-step explanations |
+| `fast` | ~2-5s | Quick answers, single LLM call (recommended) |
+| `tutorial` | ~5-10s | Step-by-step explanations with outline |
 
-*Latency assumes single RTX 3090 GPU running llama.cpp*
+*Note: Heavy presets (comprehensive, contracrow, academic) are disabled in this OpenRouter branch to avoid multiple sequential LLM calls that increase latency and cost.*
 
 ## Architecture
 
@@ -170,8 +169,8 @@ This tool implements techniques from recent research:
 ## Requirements
 
 - Docker & Docker Compose
+- OpenRouter API key
 - SearXNG instance (or Tavily/LinkUp API keys)
-- OpenAI-compatible LLM API (llama.cpp recommended)
 
 ## License
 

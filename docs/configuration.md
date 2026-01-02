@@ -32,12 +32,15 @@ All configuration is done via environment variables with the `RESEARCH_` prefix.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RESEARCH_LLM_API_BASE` | `http://172.17.0.1:8080/v1` | OpenAI-compatible API base URL |
-| `RESEARCH_LLM_API_KEY` | `not-needed` | API key (dummy for local models) |
-| `RESEARCH_LLM_MODEL` | `tongyi-deepresearch-30b` | Model name |
+| `RESEARCH_LLM_API_BASE` | `https://openrouter.ai/api/v1` | OpenAI-compatible API base URL |
+| `RESEARCH_LLM_API_KEY` | `` | API key (OpenRouter key for hosted, or dummy for local) |
+| `RESEARCH_LLM_MODEL` | `alibaba/tongyi-deepresearch-30b-a3b:free` | Primary model (free tier) |
+| `RESEARCH_LLM_MODEL_FALLBACK` | `alibaba/tongyi-deepresearch-30b-a3b` | Fallback model (paid tier) |
+| `RESEARCH_LLM_FALLBACK_ENABLED` | `true` | Auto-fallback on 429 rate limit |
 | `RESEARCH_LLM_TEMPERATURE` | `0.85` | Generation temperature |
 | `RESEARCH_LLM_TOP_P` | `0.95` | Top-p sampling parameter |
 | `RESEARCH_LLM_MAX_TOKENS` | `8192` | Maximum output tokens |
+| `RESEARCH_LLM_TIMEOUT` | `120` | LLM request timeout in seconds |
 
 ### Search Configuration
 
@@ -55,11 +58,11 @@ All configuration is done via environment variables with the `RESEARCH_` prefix.
 
 ## Configuration Examples
 
-### Minimal (SearXNG Only)
+### Minimal Configuration
 
 ```bash
-export RESEARCH_SEARXNG_HOST="http://localhost:8888"
-export RESEARCH_LLM_API_BASE="http://localhost:8080/v1"
+export RESEARCH_LLM_API_KEY="sk-or-v1-your-key-here"
+export RESEARCH_SEARXNG_HOST="http://192.168.1.3:8888"
 ```
 
 ### Full Configuration
@@ -78,11 +81,15 @@ export RESEARCH_TAVILY_SEARCH_DEPTH="advanced"
 export RESEARCH_LINKUP_API_KEY="xxxxx"
 export RESEARCH_LINKUP_DEPTH="deep"
 
-# LLM
-export RESEARCH_LLM_API_BASE="http://172.17.0.1:8080/v1"
-export RESEARCH_LLM_MODEL="tongyi-deepresearch-30b"
+# OpenRouter LLM (with auto-fallback)
+export RESEARCH_LLM_API_KEY="sk-or-v1-your-key-here"
+export RESEARCH_LLM_API_BASE="https://openrouter.ai/api/v1"
+export RESEARCH_LLM_MODEL="alibaba/tongyi-deepresearch-30b-a3b:free"
+export RESEARCH_LLM_MODEL_FALLBACK="alibaba/tongyi-deepresearch-30b-a3b"
+export RESEARCH_LLM_FALLBACK_ENABLED="true"
 export RESEARCH_LLM_TEMPERATURE="0.85"
 export RESEARCH_LLM_MAX_TOKENS="8192"
+export RESEARCH_LLM_TIMEOUT="120"
 
 # Search
 export RESEARCH_DEFAULT_TOP_K="10"
@@ -99,7 +106,12 @@ services:
     environment:
       RESEARCH_SEARXNG_HOST: "http://192.168.1.3:8888"
       RESEARCH_TAVILY_API_KEY: "${TAVILY_API_KEY:-}"
-      RESEARCH_LLM_API_BASE: "http://172.17.0.1:8080/v1"
+      RESEARCH_LINKUP_API_KEY: "${LINKUP_API_KEY:-}"
+      RESEARCH_LLM_API_KEY: "${OPENROUTER_API_KEY}"
+      RESEARCH_LLM_API_BASE: "https://openrouter.ai/api/v1"
+      RESEARCH_LLM_MODEL: "alibaba/tongyi-deepresearch-30b-a3b:free"
+      RESEARCH_LLM_MODEL_FALLBACK: "alibaba/tongyi-deepresearch-30b-a3b"
+      RESEARCH_LLM_FALLBACK_ENABLED: "true"
 ```
 
 ## Connector Priority
@@ -126,13 +138,12 @@ The `RESEARCH_RRF_K` parameter controls result fusion behavior:
 
 Formula: `score = Σ (1 / (k + rank))` for each list where item appears.
 
-## LLM Model Recommendations
+## OpenRouter Rate Limit Fallback
 
-| Model | Context | Notes |
-|-------|---------|-------|
-| Tongyi DeepResearch 30B | 32K | Recommended, research-optimized |
-| Qwen2.5-32B | 128K | Good alternative |
-| Llama 3.1 70B | 128K | Strong general purpose |
-| Mistral Large | 128K | Good for synthesis |
+This version uses automatic fallback from free to paid tier:
 
-Adjust `RESEARCH_LLM_MAX_TOKENS` based on your model's context window.
+1. Primary request uses free model: `alibaba/tongyi-deepresearch-30b-a3b:free`
+2. If 429 rate limit returned, automatically retries with: `alibaba/tongyi-deepresearch-30b-a3b`
+3. Fallback can be disabled with `RESEARCH_LLM_FALLBACK_ENABLED=false`
+
+This ensures high availability while minimizing costs.

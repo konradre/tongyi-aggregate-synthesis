@@ -207,6 +207,18 @@ If no contradictions found, respond with: NO_CONTRADICTIONS"""
         except (ValueError, IndexError):
             return 1
 
+    def detect_sync(
+        self,
+        query: str,
+        sources: list,
+    ) -> list[Contradiction]:
+        """
+        Synchronous heuristic-only detection.
+
+        For benchmarking and cases where LLM is not available.
+        """
+        return self._detect_heuristic(query, sources)
+
     def _detect_heuristic(
         self,
         query: str,

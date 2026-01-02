@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.85, description="Generation temperature")
     llm_top_p: float = Field(default=0.95, description="Top-p sampling")
     llm_max_tokens: int = Field(default=8192, description="Max output tokens")
+    llm_timeout: int = Field(default=120, description="LLM request timeout in seconds")
 
     # Search Configuration
     default_top_k: int = Field(default=10, description="Default number of results per source")

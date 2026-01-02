@@ -3,8 +3,8 @@
 ## Prerequisites
 
 - **Docker** 20.10+ and **Docker Compose** v2
+- **OpenRouter API key** for LLM access
 - **SearXNG** instance (recommended) or API keys for Tavily/LinkUp
-- **LLM Server**: OpenAI-compatible API (llama.cpp, vLLM, Ollama, etc.)
 
 ## Docker Installation (Recommended)
 
@@ -21,24 +21,22 @@ cd tongyi-aggregate-synthesis
 cp .env.example .env
 ```
 
-Edit `.env` with your API keys (optional if using SearXNG only):
+Edit `.env` with your API keys:
 
 ```env
+OPENROUTER_API_KEY=sk-or-v1-xxxxx
 TAVILY_API_KEY=tvly-xxxxx
 LINKUP_API_KEY=xxxxx
 ```
 
 ### 3. Configure docker-compose.yml
 
-Edit `docker-compose.yml` to match your infrastructure:
+The default configuration uses OpenRouter. Update SearXNG host if needed:
 
 ```yaml
 environment:
   # Point to your SearXNG instance
   RESEARCH_SEARXNG_HOST: "http://192.168.1.3:8888"
-
-  # Point to your LLM server (from container perspective)
-  RESEARCH_LLM_API_BASE: "http://172.17.0.1:8080/v1"
 ```
 
 ### 4. Build and Run
@@ -57,7 +55,7 @@ Expected response:
 ```json
 {
   "status": "healthy",
-  "connectors": ["searxng"],
+  "connectors": ["searxng", "tavily", "linkup"],
   "llm_configured": true
 }
 ```
@@ -77,8 +75,10 @@ pip install -e .
 ### 2. Set Environment Variables
 
 ```bash
-export RESEARCH_SEARXNG_HOST="http://localhost:8888"
-export RESEARCH_LLM_API_BASE="http://localhost:8080/v1"
+export RESEARCH_LLM_API_KEY="sk-or-v1-your-key-here"
+export RESEARCH_LLM_API_BASE="https://openrouter.ai/api/v1"
+export RESEARCH_LLM_MODEL="alibaba/tongyi-deepresearch-30b-a3b:free"
+export RESEARCH_SEARXNG_HOST="http://192.168.1.3:8888"
 ```
 
 ### 3. Run Development Server
@@ -90,46 +90,22 @@ python -m uvicorn src.main:app --reload --port 8000
 ### 4. Run Tests
 
 ```bash
-python scripts/test_local.py
+python -m pytest tests/ -v
 ```
 
-## LLM Server Setup
+## OpenRouter Configuration
 
-### llama.cpp (Recommended for Tongyi)
+This version uses OpenRouter exclusively with automatic rate limit fallback:
 
-```bash
-# Build llama.cpp
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-make -j LLAMA_CUDA=1
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `RESEARCH_LLM_API_BASE` | `https://openrouter.ai/api/v1` | OpenRouter API endpoint |
+| `RESEARCH_LLM_API_KEY` | Your key | OpenRouter API key |
+| `RESEARCH_LLM_MODEL` | `alibaba/tongyi-deepresearch-30b-a3b:free` | Free tier model |
+| `RESEARCH_LLM_MODEL_FALLBACK` | `alibaba/tongyi-deepresearch-30b-a3b` | Paid fallback |
+| `RESEARCH_LLM_FALLBACK_ENABLED` | `true` | Auto-fallback on 429 |
 
-# Run server with Tongyi model
-./llama-server \
-  -m /path/to/tongyi-deepresearch-30b.gguf \
-  -c 32768 \
-  -ngl 99 \
-  --host 0.0.0.0 \
-  --port 8080
-```
-
-### vLLM
-
-```bash
-vllm serve Qwen/Tongyi-DeepResearch-30B \
-  --host 0.0.0.0 \
-  --port 8080 \
-  --max-model-len 32768
-```
-
-### Ollama
-
-```bash
-ollama serve
-# In another terminal:
-ollama run tongyi-deepresearch
-```
-
-Update `RESEARCH_LLM_API_BASE` to match your server.
+When the free tier hits rate limits (429), the tool automatically retries with the paid model.
 
 ## SearXNG Setup
 
@@ -159,18 +135,12 @@ search:
 - Verify SearXNG is accessible: `curl http://your-searxng:8888/search?q=test&format=json`
 - Check API keys are set correctly in `.env`
 
-### "Synthesis error: Connection refused"
+### "Rate limit exceeded" (429)
 
-- Verify LLM server is running: `curl http://your-llm:8080/v1/models`
-- Check `RESEARCH_LLM_API_BASE` points to correct address
-- From Docker, use `172.17.0.1` to reach host services
+- This is normal for free tier - the tool auto-falls back to paid model
+- If fallback also fails, wait and retry or check your OpenRouter credits
 
-### Container can't reach host services
+### OpenRouter authentication error
 
-Add to `docker-compose.yml`:
-```yaml
-extra_hosts:
-  - "host.docker.internal:host-gateway"
-```
-
-Then use `http://host.docker.internal:8080/v1` as API base.
+- Verify `RESEARCH_LLM_API_KEY` is set correctly
+- Check your key at https://openrouter.ai/keys

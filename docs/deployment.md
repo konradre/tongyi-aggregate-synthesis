@@ -1,23 +1,33 @@
 # Deployment Guide
 
-## Docker Deployment (Recommended)
+## Quick Deployment
 
-### Single Container
+### 1. Set Environment Variables
 
 ```bash
-# Build
-docker build -t research-tool .
-
-# Run
-docker run -d \
-  --name research-tool \
-  -p 8000:8000 \
-  -e RESEARCH_SEARXNG_HOST="http://192.168.1.3:8888" \
-  -e RESEARCH_LLM_API_BASE="http://172.17.0.1:8080/v1" \
-  research-tool
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+export TAVILY_API_KEY="tvly-xxxxx"        # Optional
+export LINKUP_API_KEY="xxxxx"              # Optional
 ```
 
-### Docker Compose
+### 2. Deploy with Docker Compose
+
+```bash
+docker compose up -d
+```
+
+The default `docker-compose.yml` is pre-configured for OpenRouter with:
+- Free tier model: `alibaba/tongyi-deepresearch-30b-a3b:free`
+- Paid fallback: `alibaba/tongyi-deepresearch-30b-a3b`
+- Automatic fallback on 429 rate limits
+
+### 3. Verify
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+## Docker Commands
 
 ```bash
 # Start
@@ -26,43 +36,11 @@ docker compose up -d
 # View logs
 docker compose logs -f
 
+# Rebuild after changes
+docker compose up -d --build
+
 # Stop
 docker compose down
-```
-
-### Custom docker-compose.yml
-
-```yaml
-version: "3.8"
-
-services:
-  research-tool:
-    build: .
-    container_name: research-tool
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      # Your SearXNG instance
-      RESEARCH_SEARXNG_HOST: "http://192.168.1.3:8888"
-      RESEARCH_SEARXNG_ENGINES: "google,bing,duckduckgo"
-
-      # Optional API keys
-      RESEARCH_TAVILY_API_KEY: "${TAVILY_API_KEY:-}"
-      RESEARCH_LINKUP_API_KEY: "${LINKUP_API_KEY:-}"
-
-      # LLM server on host
-      RESEARCH_LLM_API_BASE: "http://172.17.0.1:8080/v1"
-      RESEARCH_LLM_MODEL: "tongyi-deepresearch-30b"
-      RESEARCH_LLM_TEMPERATURE: "0.85"
-      RESEARCH_LLM_MAX_TOKENS: "8192"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 ```
 
 ## VM Deployment
@@ -71,8 +49,8 @@ services:
 
 On target VM:
 - Docker and Docker Compose installed
-- LLM server running (llama.cpp, vLLM, etc.)
 - Network access to SearXNG instance
+- OpenRouter API key
 
 ### Deploy Script
 
@@ -91,6 +69,7 @@ rsync -avz --exclude '.git' --exclude '__pycache__' \
 # SSH and start
 ssh user@192.168.1.119
 cd /home/user/research-tool
+export OPENROUTER_API_KEY="sk-or-v1-your-key"
 docker compose up -d --build
 ```
 
@@ -142,7 +121,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Timeout for slow LLM responses
+        # Timeout for LLM responses
         proxy_read_timeout 120s;
     }
 }
@@ -190,30 +169,7 @@ Create password file:
 htpasswd -c /etc/nginx/.htpasswd username
 ```
 
-## Infrastructure Examples
-
-### Alongside llama.cpp
-
-```
-┌─────────────────────────────────────────┐
-│                   VM                     │
-├─────────────────────────────────────────┤
-│                                          │
-│  ┌────────────────────────────────────┐ │
-│  │        llama.cpp server            │ │
-│  │        Port: 8080                  │ │
-│  │        Model: Tongyi 30B           │ │
-│  └────────────────────────────────────┘ │
-│                    ▲                     │
-│                    │ http://172.17.0.1:8080
-│                    │                     │
-│  ┌────────────────────────────────────┐ │
-│  │     Research Tool Container        │ │
-│  │     Port: 8000                     │ │
-│  └────────────────────────────────────┘ │
-│                                          │
-└─────────────────────────────────────────┘
-```
+## Infrastructure Example
 
 ### With SearXNG on Same Host
 
@@ -235,53 +191,13 @@ services:
       - searxng
     environment:
       RESEARCH_SEARXNG_HOST: "http://searxng:8080"
-      RESEARCH_LLM_API_BASE: "http://172.17.0.1:8080/v1"
+      RESEARCH_LLM_API_KEY: "${OPENROUTER_API_KEY}"
+      RESEARCH_LLM_API_BASE: "https://openrouter.ai/api/v1"
+      RESEARCH_LLM_MODEL: "alibaba/tongyi-deepresearch-30b-a3b:free"
+      RESEARCH_LLM_MODEL_FALLBACK: "alibaba/tongyi-deepresearch-30b-a3b"
+      RESEARCH_LLM_FALLBACK_ENABLED: "true"
     ports:
       - "8000:8000"
-```
-
-### Full Stack
-
-```yaml
-version: "3.8"
-
-services:
-  searxng:
-    image: searxng/searxng
-    volumes:
-      - ./searxng:/etc/searxng
-    networks:
-      - research
-
-  llama:
-    image: ghcr.io/ggerganov/llama.cpp:server-cuda
-    runtime: nvidia
-    command: >
-      --model /models/tongyi-30b.gguf
-      --ctx-size 32768
-      --n-gpu-layers 99
-      --host 0.0.0.0
-    volumes:
-      - /path/to/models:/models
-    networks:
-      - research
-
-  research-tool:
-    build: .
-    depends_on:
-      - searxng
-      - llama
-    environment:
-      RESEARCH_SEARXNG_HOST: "http://searxng:8080"
-      RESEARCH_LLM_API_BASE: "http://llama:8080/v1"
-    ports:
-      - "8000:8000"
-    networks:
-      - research
-
-networks:
-  research:
-    driver: bridge
 ```
 
 ## Monitoring
@@ -298,18 +214,6 @@ curl http://localhost:8000/api/v1/health
 docker compose logs -f research-tool
 ```
 
-### Prometheus Metrics (Future)
-
-Add to `src/main.py`:
-
-```python
-from prometheus_fastapi_instrumentator import Instrumentator
-
-Instrumentator().instrument(app).expose(app)
-```
-
-Access metrics at `/metrics`.
-
 ## Troubleshooting
 
 ### Container won't start
@@ -322,15 +226,11 @@ docker compose logs research-tool
 docker compose config
 ```
 
-### Can't reach LLM server
+### OpenRouter errors
 
-```bash
-# Test from container
-docker exec research-tool curl http://172.17.0.1:8080/v1/models
-
-# Or use host.docker.internal
-docker exec research-tool curl http://host.docker.internal:8080/v1/models
-```
+- **401 Unauthorized**: Check `RESEARCH_LLM_API_KEY` is set correctly
+- **429 Rate Limit**: Normal for free tier - auto-fallback should handle this
+- **502 Bad Gateway**: OpenRouter service issue, retry later
 
 ### SearXNG connection refused
 
@@ -344,7 +244,6 @@ sudo ufw status
 
 ### Slow responses
 
-- Check LLM inference speed
 - Reduce `top_k` for fewer sources
 - Use `reasoning_effort: "low"` for faster responses
-- Consider vLLM with tensor parallelism for faster inference
+- Check OpenRouter status at https://status.openrouter.ai

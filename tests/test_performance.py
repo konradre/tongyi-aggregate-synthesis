@@ -106,7 +106,7 @@ class TestHeuristicPerformance:
 
         def route_queries():
             for q in queries:
-                router.route(q)
+                router.route_sync(q)
 
         result = benchmark("ConnectorRouter.route (5 queries)", route_queries, iterations=10)
         print(f"\n{result}")
@@ -489,14 +489,14 @@ class TestPipelinePerformance:
     @pytest.mark.benchmark
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_comprehensive_preset_pipeline(self, test_client, llm_configured):
-        """Benchmark comprehensive preset end-to-end."""
+    def test_tutorial_preset_pipeline(self, test_client, llm_configured):
+        """Benchmark tutorial preset end-to-end (outline-guided, OpenRouter-optimized)."""
         if not llm_configured:
             pytest.skip("LLM not configured")
 
-        def run_comprehensive_synthesis():
+        def run_tutorial_synthesis():
             response = test_client.post("/synthesize/p1", json={
-                "query": "Compare FastAPI vs Flask",
+                "query": "How to build REST APIs with FastAPI vs Flask",
                 "sources": [
                     {
                         "origin": "ref",
@@ -513,15 +513,15 @@ class TestPipelinePerformance:
                         "source_type": "documentation"
                     }
                 ],
-                "preset": "comprehensive"
+                "preset": "tutorial"
             })
             assert response.status_code == 200
 
-        result = benchmark("Comprehensive Preset E2E", run_comprehensive_synthesis, iterations=2)
+        result = benchmark("Tutorial Preset E2E", run_tutorial_synthesis, iterations=2)
         print(f"\n{result}")
 
-        # Comprehensive is slower but should finish
-        assert result.mean_ms < 120000, f"Comprehensive preset too slow: {result.mean_ms}ms"
+        # Tutorial preset with outline should complete within timeout
+        assert result.mean_ms < 60000, f"Tutorial preset too slow: {result.mean_ms}ms"
 
 
 # =============================================================================
@@ -559,7 +559,7 @@ class TestThroughput:
         start = time.perf_counter()
 
         for query in queries:
-            router.route(query)
+            router.route_sync(query)
             expander.expand_sync(query)
             selector.select_sync(query)
             generate_outline_heuristic(query, SynthesisStyle.COMPREHENSIVE)

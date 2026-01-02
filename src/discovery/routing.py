@@ -264,3 +264,38 @@ Respond with just the category name."""
             return best_type, confidence
 
         return QueryType.GENERAL, 0.5
+
+    def route_sync(self, query: str) -> RoutingDecision:
+        """
+        Synchronous routing using heuristics only.
+
+        For benchmarking and cases where async overhead is not desired.
+        """
+        query_type, confidence = self.classify_sync(query)
+
+        # Score connectors for this query type
+        scored = []
+        for connector in self.available_connectors:
+            if connector in self.CONNECTOR_STRENGTHS:
+                score = self.CONNECTOR_STRENGTHS[connector].get(query_type, 0.5)
+                scored.append((connector, score))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        primary = [scored[0][0]] if scored else []
+        secondary = [c for c, s in scored[1:] if s >= 0.6]
+
+        search_params = {}
+        for connector in primary + secondary:
+            if connector in self.CONNECTOR_PARAMS:
+                type_params = self.CONNECTOR_PARAMS[connector].get(query_type, {})
+                if type_params:
+                    search_params[connector] = type_params
+
+        return RoutingDecision(
+            query_type=query_type,
+            primary_connectors=primary,
+            secondary_connectors=secondary,
+            search_params=search_params,
+            confidence=confidence,
+        )

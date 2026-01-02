@@ -1,12 +1,15 @@
 """
-Synthesis Presets (PaperQA2-Inspired).
+Synthesis Presets (OpenRouter-Optimized).
 
-Research basis: PaperQA2 bundled settings
-- high_quality: Full verification, contradiction detection
-- fast: Skip verification for speed
-- contracrow: Optimize for finding contradictions
+This branch uses OpenRouter which has per-request costs and rate limits.
+Heavy presets (comprehensive, contracrow, academic) are disabled to avoid:
+- Multiple sequential LLM calls (5-8 per request)
+- 30-60 second response times
+- Higher API costs
 
-Key insight: Pre-configured settings simplify common use cases.
+Available presets optimized for OpenRouter:
+- fast: Single LLM call, quick responses (recommended)
+- tutorial: Outline-guided but no verification overhead
 """
 
 from dataclasses import dataclass
@@ -17,11 +20,8 @@ from .aggregator import SynthesisStyle
 
 
 class PresetName(str, Enum):
-    """Available synthesis presets."""
-    COMPREHENSIVE = "comprehensive"
+    """Available synthesis presets (OpenRouter-optimized)."""
     FAST = "fast"
-    CONTRACROW = "contracrow"
-    ACADEMIC = "academic"
     TUTORIAL = "tutorial"
 
 
@@ -41,26 +41,13 @@ class SynthesisPreset:
     min_sources: int = 1
 
 
-# Pre-defined presets
+# Pre-defined presets (OpenRouter-optimized - single LLM call each)
 SYNTHESIS_PRESETS: dict[PresetName, SynthesisPreset] = {
-    PresetName.COMPREHENSIVE: SynthesisPreset(
-        name="Comprehensive",
-        description="Full analysis with all verification steps",
-        style=SynthesisStyle.COMPREHENSIVE,
-        max_tokens=4000,
-        verify_citations=True,
-        detect_contradictions=True,
-        use_outline=True,
-        use_rcs=True,
-        run_quality_gate=True,
-        min_sources=2,
-    ),
-
     PresetName.FAST: SynthesisPreset(
         name="Fast",
-        description="Quick synthesis, skip verification for speed",
+        description="Quick synthesis, optimized for OpenRouter (recommended)",
         style=SynthesisStyle.CONCISE,
-        max_tokens=1000,
+        max_tokens=2000,
         verify_citations=False,
         detect_contradictions=False,
         use_outline=False,
@@ -70,46 +57,22 @@ SYNTHESIS_PRESETS: dict[PresetName, SynthesisPreset] = {
         min_sources=1,
     ),
 
-    PresetName.CONTRACROW: SynthesisPreset(
-        name="Contracrow",
-        description="Optimized for finding contradictions (from PaperQA2)",
-        style=SynthesisStyle.COMPARATIVE,
-        max_tokens=3000,
-        verify_citations=True,
-        detect_contradictions=True,  # Primary focus
-        use_outline=False,
-        use_rcs=True,
-        run_quality_gate=True,
-        min_sources=2,
-    ),
-
-    PresetName.ACADEMIC: SynthesisPreset(
-        name="Academic",
-        description="Scholarly synthesis with rigorous citations",
-        style=SynthesisStyle.ACADEMIC,
-        max_tokens=5000,
-        verify_citations=True,
-        detect_contradictions=True,
-        use_outline=True,
-        use_rcs=True,
-        run_quality_gate=True,
-        temperature=0.5,
-        min_sources=3,
-    ),
-
     PresetName.TUTORIAL: SynthesisPreset(
         name="Tutorial",
-        description="Step-by-step guide format",
+        description="Step-by-step guide format with outline",
         style=SynthesisStyle.TUTORIAL,
         max_tokens=3000,
-        verify_citations=False,  # Less critical for tutorials
+        verify_citations=False,
         detect_contradictions=False,
-        use_outline=True,
+        use_outline=True,  # Single extra LLM call for structure
         use_rcs=False,
         run_quality_gate=False,
         min_sources=1,
     ),
 }
+
+# Default preset for OpenRouter
+DEFAULT_PRESET = PresetName.FAST
 
 
 def get_preset(name: str) -> SynthesisPreset:
@@ -117,21 +80,26 @@ def get_preset(name: str) -> SynthesisPreset:
     Get preset by name string.
 
     Args:
-        name: Preset name (comprehensive, fast, contracrow, academic, tutorial)
+        name: Preset name (fast, tutorial)
 
     Returns:
         SynthesisPreset configuration
+
+    Note:
+        OpenRouter branch only supports fast and tutorial presets.
+        Legacy preset names (comprehensive, contracrow, academic) fall back to fast.
     """
     try:
         preset_name = PresetName(name.lower())
         return SYNTHESIS_PRESETS[preset_name]
     except (ValueError, KeyError):
-        return SYNTHESIS_PRESETS[PresetName.COMPREHENSIVE]
+        # Fall back to fast for any unknown/legacy preset
+        return SYNTHESIS_PRESETS[DEFAULT_PRESET]
 
 
 def get_preset_by_enum(preset: PresetName) -> SynthesisPreset:
     """Get preset by enum value."""
-    return SYNTHESIS_PRESETS.get(preset, SYNTHESIS_PRESETS[PresetName.COMPREHENSIVE])
+    return SYNTHESIS_PRESETS.get(preset, SYNTHESIS_PRESETS[DEFAULT_PRESET])
 
 
 def list_presets() -> list[dict]:

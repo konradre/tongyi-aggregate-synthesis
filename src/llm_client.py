@@ -4,6 +4,7 @@ Handles automatic fallback from free tier to paid model on rate limits.
 """
 
 import logging
+import httpx
 from typing import Optional, List, Dict, Any
 from openai import AsyncOpenAI, RateLimitError, APIStatusError
 from .config import settings
@@ -50,9 +51,15 @@ class OpenRouterClient:
         self.fallback_model = fallback_model or settings.llm_model_fallback
         self.fallback_enabled = fallback_enabled if fallback_enabled is not None else settings.llm_fallback_enabled
 
+        # Configure timeout for OpenRouter (free tier can be slow)
+        timeout = httpx.Timeout(
+            timeout=settings.llm_timeout,
+            connect=10.0,
+        )
         self._client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=self.api_key,
+            timeout=timeout,
         )
 
         # Track which model was last used (for debugging/logging)

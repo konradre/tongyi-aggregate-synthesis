@@ -229,3 +229,122 @@ class TestPerformance:
         assert response.status_code == 200
         # Health check should be instant
         assert elapsed < 1, f"Health check took too long: {elapsed:.2f}s"
+
+
+class TestMCPIntegration:
+    """Tests for MCP server integration."""
+
+    @pytest.mark.unit
+    def test_root_endpoint_shows_mcp(self, client):
+        """Root endpoint advertises MCP endpoint."""
+        response = client.get("/")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mcp"] == "/mcp"
+
+    @pytest.mark.unit
+    def test_openapi_schema_available(self, client):
+        """OpenAPI schema is available for MCP tool generation."""
+        response = client.get("/openapi.json")
+        assert response.status_code == 200
+        schema = response.json()
+        assert "paths" in schema
+        # Core endpoints should be in schema
+        assert "/api/v1/search" in schema["paths"]
+        assert "/api/v1/research" in schema["paths"]
+        assert "/api/v1/ask" in schema["paths"]
+        assert "/api/v1/discover" in schema["paths"]
+
+
+class TestCacheIntegration:
+    """Tests for cache integration in HTTP routes."""
+
+    @pytest.mark.unit
+    def test_cache_module_imports(self):
+        """Cache module is properly imported in routes."""
+        from src.api.routes import cache
+        assert cache is not None
+
+    @pytest.mark.unit
+    def test_cache_tiers_available(self):
+        """Cache supports required tiers."""
+        from src.cache import cache
+        # These are the tiers used in routes
+        tiers = ["search", "ask", "discover", "synthesis", "reason"]
+        for tier in tiers:
+            # Should not raise
+            cache.get("test", tier=tier)
+
+
+class TestP0P1Endpoints:
+    """Tests for P0 and P1 enhanced endpoints."""
+
+    @pytest.mark.unit
+    def test_presets_endpoint(self, client):
+        """Presets endpoint returns available presets."""
+        response = client.get("/api/v1/presets")
+        assert response.status_code == 200
+        data = response.json()
+        assert "presets" in data
+        # OpenRouter-optimized: only fast and tutorial presets
+        preset_names = [p["name"].lower() for p in data["presets"]]
+        assert "fast" in preset_names
+        assert "tutorial" in preset_names
+
+    @pytest.mark.unit
+    def test_focus_modes_endpoint(self, client):
+        """Focus modes endpoint returns available modes."""
+        response = client.get("/api/v1/focus-modes")
+        assert response.status_code == 200
+        data = response.json()
+        assert "modes" in data
+        # Should have at least these modes
+        mode_values = [m["value"] for m in data["modes"]]
+        assert "general" in mode_values
+        assert "academic" in mode_values
+
+    @pytest.mark.unit
+    def test_synthesize_enhanced_endpoint_exists(self, client):
+        """Enhanced synthesis endpoint is registered."""
+        # Test that endpoint exists (will fail with 422 for missing body)
+        response = client.post("/api/v1/synthesize/enhanced")
+        # 422 means endpoint exists but needs body
+        assert response.status_code == 422
+
+    @pytest.mark.unit
+    def test_synthesize_p1_endpoint_exists(self, client):
+        """P1 synthesis endpoint is registered."""
+        response = client.post("/api/v1/synthesize/p1")
+        assert response.status_code == 422  # Exists but needs body
+
+
+class TestOpenRouterConfiguration:
+    """Tests for OpenRouter-specific configuration."""
+
+    @pytest.mark.unit
+    def test_config_has_openrouter_settings(self):
+        """Config includes OpenRouter-specific settings."""
+        from src.config import settings
+        assert hasattr(settings, 'llm_model_fallback')
+        assert hasattr(settings, 'llm_fallback_enabled')
+        # Default should be OpenRouter
+        assert "openrouter.ai" in settings.llm_api_base
+
+    @pytest.mark.unit
+    def test_llm_client_has_fallback(self):
+        """LLM client supports fallback mechanism."""
+        from src.llm_client import OpenRouterClient, is_rate_limit_error
+        client = OpenRouterClient()
+        assert hasattr(client, 'primary_model')
+        assert hasattr(client, 'fallback_model')
+        assert hasattr(client, 'fallback_enabled')
+        # is_rate_limit_error function exists
+        assert callable(is_rate_limit_error)
+
+    @pytest.mark.unit
+    def test_synthesis_engine_uses_openrouter_client(self):
+        """SynthesisEngine uses OpenRouterClient."""
+        from src.synthesis.engine import SynthesisEngine
+        from src.llm_client import OpenRouterClient
+        engine = SynthesisEngine()
+        assert isinstance(engine.client, OpenRouterClient)
