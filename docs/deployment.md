@@ -17,9 +17,8 @@ docker compose up -d
 ```
 
 The default `docker-compose.yml` is pre-configured for OpenRouter with:
-- Free tier model: `alibaba/tongyi-deepresearch-30b-a3b:free`
-- Paid fallback: `alibaba/tongyi-deepresearch-30b-a3b`
-- Automatic fallback on 429 rate limits
+- Model: `alibaba/tongyi-deepresearch-30b-a3b`
+- Per-request API key support for multi-tenant deployments
 
 ### 3. Verify
 
@@ -193,9 +192,7 @@ services:
       RESEARCH_SEARXNG_HOST: "http://searxng:8080"
       RESEARCH_LLM_API_KEY: "${OPENROUTER_API_KEY}"
       RESEARCH_LLM_API_BASE: "https://openrouter.ai/api/v1"
-      RESEARCH_LLM_MODEL: "alibaba/tongyi-deepresearch-30b-a3b:free"
-      RESEARCH_LLM_MODEL_FALLBACK: "alibaba/tongyi-deepresearch-30b-a3b"
-      RESEARCH_LLM_FALLBACK_ENABLED: "true"
+      RESEARCH_LLM_MODEL: "alibaba/tongyi-deepresearch-30b-a3b"
     ports:
       - "8000:8000"
 ```
@@ -229,7 +226,7 @@ docker compose config
 ### OpenRouter errors
 
 - **401 Unauthorized**: Check `RESEARCH_LLM_API_KEY` is set correctly
-- **429 Rate Limit**: Normal for free tier - auto-fallback should handle this
+- **429 Rate Limit**: Check your OpenRouter credits or API key limits
 - **502 Bad Gateway**: OpenRouter service issue, retry later
 
 ### SearXNG connection refused

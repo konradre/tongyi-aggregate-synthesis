@@ -25,9 +25,7 @@ class Settings(BaseSettings):
     # OpenRouter LLM Configuration
     llm_api_base: str = Field(default="https://openrouter.ai/api/v1", description="LLM API base URL")
     llm_api_key: str = Field(default="", description="OpenRouter API key")
-    llm_model: str = Field(default="alibaba/tongyi-deepresearch-30b-a3b:free", description="Primary model (free tier)")
-    llm_model_fallback: str = Field(default="alibaba/tongyi-deepresearch-30b-a3b", description="Fallback model (paid)")
-    llm_fallback_enabled: bool = Field(default=True, description="Enable fallback to paid model on rate limit")
+    llm_model: str = Field(default="alibaba/tongyi-deepresearch-30b-a3b", description="DeepResearch model")
     llm_temperature: float = Field(default=0.85, description="Generation temperature")
     llm_top_p: float = Field(default=0.95, description="Top-p sampling")
     llm_max_tokens: int = Field(default=8192, description="Max output tokens")

@@ -325,21 +325,22 @@ class TestOpenRouterConfiguration:
     def test_config_has_openrouter_settings(self):
         """Config includes OpenRouter-specific settings."""
         from src.config import settings
-        assert hasattr(settings, 'llm_model_fallback')
-        assert hasattr(settings, 'llm_fallback_enabled')
+        assert hasattr(settings, 'llm_api_base')
+        assert hasattr(settings, 'llm_api_key')
+        assert hasattr(settings, 'llm_model')
         # Default should be OpenRouter
         assert "openrouter.ai" in settings.llm_api_base
 
     @pytest.mark.unit
-    def test_llm_client_has_fallback(self):
-        """LLM client supports fallback mechanism."""
-        from src.llm_client import OpenRouterClient, is_rate_limit_error
-        client = OpenRouterClient()
-        assert hasattr(client, 'primary_model')
-        assert hasattr(client, 'fallback_model')
-        assert hasattr(client, 'fallback_enabled')
-        # is_rate_limit_error function exists
-        assert callable(is_rate_limit_error)
+    def test_llm_client_accepts_per_request_key(self):
+        """LLM client supports per-request API key."""
+        from src.llm_client import OpenRouterClient, get_llm_client
+        # Test that get_llm_client accepts api_key parameter
+        client = get_llm_client(api_key="test-key")
+        assert client.api_key == "test-key"
+        # Test default client uses settings
+        default_client = get_llm_client()
+        assert hasattr(default_client, 'api_key')
 
     @pytest.mark.unit
     def test_synthesis_engine_uses_openrouter_client(self):

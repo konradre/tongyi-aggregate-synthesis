@@ -66,6 +66,10 @@ class ResearchRequest(BaseModel):
         default=None,
         description="Discovery focus mode for query optimization"
     )
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class CitationSchema(BaseModel):
@@ -119,6 +123,10 @@ class DiscoverRequest(BaseModel):
     connectors: list[str] | None = Field(
         default=None,
         description="Specific connectors to use"
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
     )
 
 
@@ -225,6 +233,10 @@ class SynthesizeRequest(BaseModel):
         description="Synthesis style"
     )
     max_tokens: int = Field(default=3000, ge=500, le=8000)
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class SynthesisAttributionSchema(BaseModel):
@@ -267,6 +279,10 @@ class ReasonRequest(BaseModel):
     style: Literal[
         "comprehensive", "concise", "comparative", "tutorial", "academic"
     ] = Field(default="comprehensive")
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class ReasonResponse(BaseModel):
@@ -301,6 +317,10 @@ class AskRequest(BaseModel):
     preset: Literal["fast", "comprehensive"] | None = Field(
         default=None,
         description="Synthesis preset (fast recommended for /ask)"
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
     )
 
 
@@ -359,6 +379,10 @@ class DiscoverRequestEnhanced(BaseModel):
     fill_gaps: bool = Field(default=True, description="Auto-search for knowledge gaps")
     use_adaptive_routing: bool = Field(default=True, description="Route to optimal connectors")
     connectors: list[str] | None = Field(default=None)
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class SynthesizeRequestEnhanced(BaseModel):
@@ -377,6 +401,10 @@ class SynthesizeRequestEnhanced(BaseModel):
     run_quality_gate: bool = Field(default=True, description="Evaluate source quality first")
     detect_contradictions: bool = Field(default=True, description="Surface source contradictions")
     verify_citations: bool = Field(default=False, description="NLI verify citations (slower)")
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class SynthesizeResponseEnhanced(BaseModel):
@@ -474,6 +502,10 @@ class DiscoverRequestP1(BaseModel):
         default=None,
         description="Domain-specific mode (auto-detected if not provided)"
     )
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class SynthesizeRequestP1(BaseModel):
@@ -516,6 +548,10 @@ class SynthesizeRequestP1(BaseModel):
     run_quality_gate: bool = Field(default=True, description="Evaluate source quality first")
     detect_contradictions: bool = Field(default=True, description="Surface source contradictions")
     verify_citations: bool = Field(default=False, description="NLI verify citations (slower)")
+    api_key: str | None = Field(
+        default=None,
+        description="OpenRouter API key for this request. Uses server default if not provided."
+    )
 
 
 class SynthesizeResponseP1(BaseModel):

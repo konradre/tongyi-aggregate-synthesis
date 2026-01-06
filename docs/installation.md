@@ -77,7 +77,7 @@ pip install -e .
 ```bash
 export RESEARCH_LLM_API_KEY="sk-or-v1-your-key-here"
 export RESEARCH_LLM_API_BASE="https://openrouter.ai/api/v1"
-export RESEARCH_LLM_MODEL="alibaba/tongyi-deepresearch-30b-a3b:free"
+export RESEARCH_LLM_MODEL="alibaba/tongyi-deepresearch-30b-a3b"
 export RESEARCH_SEARXNG_HOST="http://192.168.1.3:8888"
 ```
 
@@ -95,17 +95,15 @@ python -m pytest tests/ -v
 
 ## OpenRouter Configuration
 
-This version uses OpenRouter exclusively with automatic rate limit fallback:
+This version uses OpenRouter with per-request API key support for multi-tenant deployments:
 
 | Variable | Value | Description |
 |----------|-------|-------------|
 | `RESEARCH_LLM_API_BASE` | `https://openrouter.ai/api/v1` | OpenRouter API endpoint |
-| `RESEARCH_LLM_API_KEY` | Your key | OpenRouter API key |
-| `RESEARCH_LLM_MODEL` | `alibaba/tongyi-deepresearch-30b-a3b:free` | Free tier model |
-| `RESEARCH_LLM_MODEL_FALLBACK` | `alibaba/tongyi-deepresearch-30b-a3b` | Paid fallback |
-| `RESEARCH_LLM_FALLBACK_ENABLED` | `true` | Auto-fallback on 429 |
+| `RESEARCH_LLM_API_KEY` | Your key | Server default OpenRouter API key |
+| `RESEARCH_LLM_MODEL` | `alibaba/tongyi-deepresearch-30b-a3b` | DeepResearch model |
 
-When the free tier hits rate limits (429), the tool automatically retries with the paid model.
+Users can pass their own `api_key` in requests for per-user billing.
 
 ## SearXNG Setup
 
@@ -137,8 +135,8 @@ search:
 
 ### "Rate limit exceeded" (429)
 
-- This is normal for free tier - the tool auto-falls back to paid model
-- If fallback also fails, wait and retry or check your OpenRouter credits
+- Wait and retry, or check your OpenRouter credits
+- Consider using a higher-tier API key
 
 ### OpenRouter authentication error
 

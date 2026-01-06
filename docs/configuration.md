@@ -34,9 +34,7 @@ All configuration is done via environment variables with the `RESEARCH_` prefix.
 |----------|---------|-------------|
 | `RESEARCH_LLM_API_BASE` | `https://openrouter.ai/api/v1` | OpenAI-compatible API base URL |
 | `RESEARCH_LLM_API_KEY` | `` | API key (OpenRouter key for hosted, or dummy for local) |
-| `RESEARCH_LLM_MODEL` | `alibaba/tongyi-deepresearch-30b-a3b:free` | Primary model (free tier) |
-| `RESEARCH_LLM_MODEL_FALLBACK` | `alibaba/tongyi-deepresearch-30b-a3b` | Fallback model (paid tier) |
-| `RESEARCH_LLM_FALLBACK_ENABLED` | `true` | Auto-fallback on 429 rate limit |
+| `RESEARCH_LLM_MODEL` | `alibaba/tongyi-deepresearch-30b-a3b` | DeepResearch model |
 | `RESEARCH_LLM_TEMPERATURE` | `0.85` | Generation temperature |
 | `RESEARCH_LLM_TOP_P` | `0.95` | Top-p sampling parameter |
 | `RESEARCH_LLM_MAX_TOKENS` | `8192` | Maximum output tokens |
@@ -81,12 +79,10 @@ export RESEARCH_TAVILY_SEARCH_DEPTH="advanced"
 export RESEARCH_LINKUP_API_KEY="xxxxx"
 export RESEARCH_LINKUP_DEPTH="deep"
 
-# OpenRouter LLM (with auto-fallback)
+# OpenRouter LLM
 export RESEARCH_LLM_API_KEY="sk-or-v1-your-key-here"
 export RESEARCH_LLM_API_BASE="https://openrouter.ai/api/v1"
-export RESEARCH_LLM_MODEL="alibaba/tongyi-deepresearch-30b-a3b:free"
-export RESEARCH_LLM_MODEL_FALLBACK="alibaba/tongyi-deepresearch-30b-a3b"
-export RESEARCH_LLM_FALLBACK_ENABLED="true"
+export RESEARCH_LLM_MODEL="alibaba/tongyi-deepresearch-30b-a3b"
 export RESEARCH_LLM_TEMPERATURE="0.85"
 export RESEARCH_LLM_MAX_TOKENS="8192"
 export RESEARCH_LLM_TIMEOUT="120"
@@ -109,9 +105,7 @@ services:
       RESEARCH_LINKUP_API_KEY: "${LINKUP_API_KEY:-}"
       RESEARCH_LLM_API_KEY: "${OPENROUTER_API_KEY}"
       RESEARCH_LLM_API_BASE: "https://openrouter.ai/api/v1"
-      RESEARCH_LLM_MODEL: "alibaba/tongyi-deepresearch-30b-a3b:free"
-      RESEARCH_LLM_MODEL_FALLBACK: "alibaba/tongyi-deepresearch-30b-a3b"
-      RESEARCH_LLM_FALLBACK_ENABLED: "true"
+      RESEARCH_LLM_MODEL: "alibaba/tongyi-deepresearch-30b-a3b"
 ```
 
 ## Connector Priority
@@ -138,12 +132,20 @@ The `RESEARCH_RRF_K` parameter controls result fusion behavior:
 
 Formula: `score = Σ (1 / (k + rank))` for each list where item appears.
 
-## OpenRouter Rate Limit Fallback
+## Per-Request API Key Support
 
-This version uses automatic fallback from free to paid tier:
+This version supports per-request API keys for multi-tenant deployments:
 
-1. Primary request uses free model: `alibaba/tongyi-deepresearch-30b-a3b:free`
-2. If 429 rate limit returned, automatically retries with: `alibaba/tongyi-deepresearch-30b-a3b`
-3. Fallback can be disabled with `RESEARCH_LLM_FALLBACK_ENABLED=false`
+1. Pass `api_key` parameter in any LLM-enabled endpoint request
+2. Usage is charged to the per-request key's OpenRouter account
+3. If no `api_key` provided, falls back to server-configured `RESEARCH_LLM_API_KEY`
 
-This ensures high availability while minimizing costs.
+Example:
+```json
+{
+  "query": "What is RAG?",
+  "api_key": "sk-or-v1-user-specific-key"
+}
+```
+
+This enables multiple users to share a single deployment with individual billing.

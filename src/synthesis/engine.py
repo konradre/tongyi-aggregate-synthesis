@@ -32,7 +32,7 @@ class SynthesisEngine:
             temperature: Generation temperature
             top_p: Top-p sampling parameter
             max_tokens: Maximum output tokens
-            client: Optional OpenRouterClient with fallback support
+            client: Optional OpenRouterClient for per-request API key support
         """
         self.api_base = api_base or settings.llm_api_base
         self.api_key = api_key or settings.llm_api_key
@@ -41,7 +41,7 @@ class SynthesisEngine:
         self.top_p = top_p if top_p is not None else settings.llm_top_p
         self.max_tokens = max_tokens or settings.llm_max_tokens
 
-        # Use provided client or create OpenRouterClient with fallback support
+        # Use provided client or create OpenRouterClient
         self.client = client or get_llm_client()
 
     async def synthesize(

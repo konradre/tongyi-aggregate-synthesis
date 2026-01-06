@@ -1,6 +1,6 @@
 # Tongyi Aggregate Synthesis
 
-A research-backed hybrid research tool combining multi-source web search with LLM-powered synthesis. Uses OpenRouter for Tongyi DeepResearch 30B with automatic free-to-paid tier fallback.
+A research-backed hybrid research tool combining multi-source web search with LLM-powered synthesis. Uses OpenRouter for Tongyi DeepResearch 30B with per-request API key support for multi-tenant deployments.
 
 ## Features
 
@@ -8,7 +8,7 @@ A research-backed hybrid research tool combining multi-source web search with LL
 - **Multi-Source Search**: Parallel queries across SearXNG, Tavily, and LinkUp
 - **RRF Fusion**: Reciprocal Rank Fusion combines and re-ranks results
 - **Citation-Aware Synthesis**: LLM generates answers with inline citations
-- **OpenRouter Integration**: Free tier with auto-fallback to paid on 429 rate limits
+- **OpenRouter Integration**: Per-request API key support for multi-tenant usage
 
 ### Discovery Module (Research-Backed)
 - **Adaptive Routing**: Query classification routes to optimal connectors
@@ -26,7 +26,7 @@ A research-backed hybrid research tool combining multi-source web search with LL
 
 ### Compatibility
 - **Reasoning Model Support**: Works with DeepSeek-R1, Tongyi-DeepResearch, Qwen-QwQ
-- **OpenRouter Support**: Automatic fallback from free to paid tier on rate limits
+- **Multi-Tenant Support**: Per-request API keys allow usage billing to individual accounts
 - **Docker-Ready**: Single container deployment
 
 ## Quick Start

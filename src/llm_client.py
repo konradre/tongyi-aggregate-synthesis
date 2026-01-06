@@ -1,57 +1,38 @@
-"""LLM client with OpenRouter fallback support.
+"""LLM client for OpenRouter.
 
-Handles automatic fallback from free tier to paid model on rate limits.
+Simple AsyncOpenAI wrapper for OpenRouter with per-request API key support.
 """
 
 import logging
 import httpx
 from typing import Optional, List, Dict, Any
-from openai import AsyncOpenAI, RateLimitError, APIStatusError
+from openai import AsyncOpenAI
 from .config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def is_rate_limit_error(error: Exception) -> bool:
-    """Check if exception is a rate limit error (including OpenRouter wrapped 429s)."""
-    if isinstance(error, RateLimitError):
-        return True
-    if isinstance(error, APIStatusError) and error.status_code == 429:
-        return True
-    # OpenRouter may wrap upstream rate limits
-    error_str = str(error).lower()
-    if "429" in error_str and ("rate" in error_str or "limit" in error_str):
-        return True
-    return False
-
-
 class OpenRouterClient:
-    """AsyncOpenAI wrapper with automatic fallback on rate limits."""
+    """AsyncOpenAI wrapper for OpenRouter with per-request API key support."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        primary_model: Optional[str] = None,
-        fallback_model: Optional[str] = None,
-        fallback_enabled: Optional[bool] = None,
+        model: Optional[str] = None,
     ):
         """Initialize OpenRouter client.
 
         Args:
             api_key: OpenRouter API key (defaults to settings)
             base_url: API base URL (defaults to settings)
-            primary_model: Primary model to try first (defaults to settings)
-            fallback_model: Fallback model on rate limit (defaults to settings)
-            fallback_enabled: Whether to enable fallback (defaults to settings)
+            model: Model to use (defaults to settings)
         """
         self.api_key = api_key or settings.llm_api_key
         self.base_url = base_url or settings.llm_api_base
-        self.primary_model = primary_model or settings.llm_model
-        self.fallback_model = fallback_model or settings.llm_model_fallback
-        self.fallback_enabled = fallback_enabled if fallback_enabled is not None else settings.llm_fallback_enabled
+        self.model = model or settings.llm_model
 
-        # Configure timeout for OpenRouter (free tier can be slow)
+        # Configure timeout
         timeout = httpx.Timeout(
             timeout=settings.llm_timeout,
             connect=10.0,
@@ -62,9 +43,8 @@ class OpenRouterClient:
             timeout=timeout,
         )
 
-        # Track which model was last used (for debugging/logging)
+        # Track which model was last used
         self.last_model_used: Optional[str] = None
-        self.last_was_fallback: bool = False
 
     async def chat_completion(
         self,
@@ -75,11 +55,11 @@ class OpenRouterClient:
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> Any:
-        """Create chat completion with automatic fallback.
+        """Create chat completion.
 
         Args:
             messages: Chat messages
-            model: Override model (skips fallback logic if provided)
+            model: Override model
             temperature: Generation temperature
             top_p: Top-p sampling
             max_tokens: Max output tokens
@@ -87,62 +67,23 @@ class OpenRouterClient:
 
         Returns:
             OpenAI ChatCompletion response
-
-        Raises:
-            RateLimitError: If both primary and fallback models are rate limited
         """
-        # Use provided model or primary
-        current_model = model or self.primary_model
+        current_model = model or self.model
         temperature = temperature if temperature is not None else settings.llm_temperature
         top_p = top_p if top_p is not None else settings.llm_top_p
         max_tokens = max_tokens if max_tokens is not None else settings.llm_max_tokens
 
-        try:
-            logger.debug(f"Attempting request with primary model: {current_model}")
-            response = await self._client.chat.completions.create(
-                model=current_model,
-                messages=messages,
-                temperature=temperature,
-                top_p=top_p,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
-            self.last_model_used = current_model
-            self.last_was_fallback = False
-            logger.debug(f"Success with primary model: {current_model}")
-            return response
-
-        except Exception as e:
-            # Check for rate limit errors (including OpenRouter wrapped 429s)
-            if not is_rate_limit_error(e):
-                raise  # Re-raise non-rate-limit errors
-
-            # Only fallback if enabled and using primary model (explicit or default)
-            if self.fallback_enabled and current_model == self.primary_model:
-                logger.warning(
-                    f"Rate limited on {current_model}, falling back to {self.fallback_model}"
-                )
-                try:
-                    response = await self._client.chat.completions.create(
-                        model=self.fallback_model,
-                        messages=messages,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                        **kwargs,
-                    )
-                    self.last_model_used = self.fallback_model
-                    self.last_was_fallback = True
-                    logger.info(f"Fallback successful with: {self.fallback_model}")
-                    return response
-
-                except Exception as fallback_e:
-                    if is_rate_limit_error(fallback_e):
-                        logger.error(f"Both primary and fallback models rate limited")
-                    raise
-            else:
-                # Re-raise if fallback disabled or already on fallback
-                raise
+        logger.debug(f"Request with model: {current_model}")
+        response = await self._client.chat.completions.create(
+            model=current_model,
+            messages=messages,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+        self.last_model_used = current_model
+        return response
 
     @property
     def chat(self):
@@ -170,12 +111,7 @@ class _CompletionsNamespace:
         messages: List[Dict[str, str]],
         **kwargs,
     ) -> Any:
-        """Create chat completion - delegates to client with fallback logic.
-
-        Note: The model parameter is used but fallback still applies if it matches
-        the primary model. To skip fallback entirely, the caller should set
-        fallback_enabled=False on the client.
-        """
+        """Create chat completion."""
         return await self._client.chat_completion(
             messages=messages,
             model=model,
@@ -183,6 +119,10 @@ class _CompletionsNamespace:
         )
 
 
-def get_llm_client() -> OpenRouterClient:
-    """Get configured OpenRouter client with fallback support."""
-    return OpenRouterClient()
+def get_llm_client(api_key: str | None = None) -> OpenRouterClient:
+    """Get OpenRouter client.
+
+    Args:
+        api_key: Optional per-request API key. Uses server default if None.
+    """
+    return OpenRouterClient(api_key=api_key if api_key else None)

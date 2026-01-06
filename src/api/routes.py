@@ -87,9 +87,9 @@ from ..config import settings
 router = APIRouter()
 
 
-def _get_llm_client() -> OpenRouterClient:
-    """Get OpenRouter client with automatic fallback support."""
-    return get_llm_client()
+def _get_llm_client(api_key: str | None = None) -> OpenRouterClient:
+    """Get OpenRouter client with optional per-request API key."""
+    return get_llm_client(api_key=api_key)
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -166,7 +166,7 @@ async def research(request: ResearchRequest):
     - focus_mode: Optimize discovery for specific domains
     """
     aggregator = SearchAggregator()
-    llm_client = _get_llm_client()
+    llm_client = _get_llm_client(request.api_key)
 
     if not aggregator.connectors:
         raise HTTPException(
@@ -308,7 +308,7 @@ async def research(request: ResearchRequest):
         )
 
     # Standard synthesis (no preset)
-    engine = SynthesisEngine()
+    engine = SynthesisEngine(client=_get_llm_client(request.api_key))
     result = await engine.research(
         query=request.query,
         sources=sources,
@@ -360,7 +360,7 @@ async def ask(request: AskRequest):
         return AskResponse(**cached_result)
 
     aggregator = SearchAggregator()
-    engine = SynthesisEngine()
+    engine = SynthesisEngine(client=_get_llm_client(request.api_key))
 
     if not aggregator.connectors:
         raise HTTPException(
@@ -450,7 +450,7 @@ async def discover(request: DiscoverRequest | DiscoverRequestEnhanced):
         return DiscoverResponse(**cached_result)
 
     aggregator = SearchAggregator()
-    llm_client = _get_llm_client()
+    llm_client = _get_llm_client(request.api_key)
 
     if not aggregator.connectors:
         raise HTTPException(
@@ -567,7 +567,7 @@ async def synthesize(request: SynthesizeRequest):
         cached_result["_cached"] = True
         return SynthesizeResponse(**cached_result)
 
-    llm_client = _get_llm_client()
+    llm_client = _get_llm_client(request.api_key)
     aggregator = SynthesisAggregator(
         llm_client=llm_client,
         model=settings.llm_model,
@@ -657,7 +657,7 @@ async def reason(request: ReasonRequest):
         cached_result["_cached"] = True
         return ReasonResponse(**cached_result)
 
-    llm_client = _get_llm_client()
+    llm_client = _get_llm_client(request.api_key)
     aggregator = SynthesisAggregator(
         llm_client=llm_client,
         model=settings.llm_model,
@@ -746,7 +746,7 @@ async def synthesize_enhanced(request: SynthesizeRequestEnhanced):
 
     Use this endpoint when citation reliability is critical.
     """
-    llm_client = _get_llm_client()
+    llm_client = _get_llm_client(request.api_key)
 
     # Convert request sources to internal format
     sources = [
@@ -989,7 +989,7 @@ async def synthesize_p1(request: SynthesizeRequestP1):
 
     Use preset=None to manually configure individual options.
     """
-    llm_client = _get_llm_client()
+    llm_client = _get_llm_client(request.api_key)
 
     # Convert request sources to internal format
     sources = [
